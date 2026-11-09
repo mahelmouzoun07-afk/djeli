@@ -13,7 +13,7 @@ Ici, l'architecte (Claude) écrit les instructions, et Harness (DeepSeek) écrit
 | 04 | Authentification | 03 | On peut s'inscrire et se connecter |
 | 05 | Paiements Mobile Money | 04 | Un achat test en sandbox ajoute des crédits |
 | 06 | Analyse de l'activité | 04 | Un lien de site donne une analyse et des profils cibles |
-| 07 | Annuaire | 02 | Des entreprises du Bénin et du Sénégal dans la base |
+| 07A → 07H | Annuaire, en 8 sous-modules (sommaire : `07-annuaire.md`) | 02 | Des entreprises du Bénin et du Sénégal dans la base, avec leurs sources et leurs scores |
 | 08 | Prospects et choix du canal | 03, 06, 07 | Une campagne trouve et analyse des prospects |
 | 09 | Rédaction et vérification | 08 | Des messages personnalisés, vérifiés |
 | 10 | Envoi (email, SMS, WhatsApp) | 03, 09 | Un email part vers ta propre boîte |
@@ -23,7 +23,9 @@ Ici, l'architecte (Claude) écrit les instructions, et Harness (DeepSeek) écrit
 | 14 | Appels IA | 12, 13 | Un appel simulé de bout en bout |
 | 15 | Sécurité et tests finaux | tout | Les 10 scénarios passent |
 
-Les modules **05, 06 et 07** peuvent se faire en parallèle (dans des sessions Harness séparées) une fois le 04 terminé.
+La liste de toutes les sources de l'annuaire et ce qu'on a le droit d'en faire : `docs/sources/REGISTRE-DES-SOURCES.md`.
+
+Les modules **05, 06 et 07A** peuvent se faire en parallèle (dans des sessions Harness séparées) une fois le 04 terminé.
 
 ## Comment faire, étape par étape
 

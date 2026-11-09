@@ -83,7 +83,8 @@ Un module est terminé quand :
 - [ ] `npx vitest run` passe, avec des tests pour la logique métier du module
 - [ ] Les migrations s'appliquent sur une base vide (`supabase db reset` en local)
 - [ ] Les critères d'acceptation du module sont tous vérifiés
-- [ ] Un commit git par module, message : `feat(backend): module XX - titre`
+- [ ] Travail sur une branche `module-XX` créée depuis `main` (jamais directement sur `main`), avec un ou plusieurs commits, message : `feat(backend): module XX - titre`
+- [ ] Pas de `git push` ni de fusion dans `main` : l'architecte relit d'abord
 
 ## 7. Ton rapport final (obligatoire)
 

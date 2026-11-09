@@ -4,19 +4,20 @@
 Pour une campagne : trouver les prospects dans l'annuaire, analyser chacun (4 crédits), puis décider **par quel canal** et **dans quel ordre** le contacter.
 
 ## Prérequis
-Modules 03, 06 et 07 terminés.
+Modules 03 et 06 terminés, et l’annuaire au moins jusqu’à 07C (07D à 07G enrichissent les signaux, mais ne sont pas bloquants).
 
 ## À faire
 
 ### 1. Sélection `src/lib/prospects/selection.ts`
 - `selectionnerProspects(campagneId, nombre)` : appelle `chercherEntreprises` avec les critères du profil cible, trie par adéquation, crée les lignes `prospects` (statut `nouveau`)
-- Score d'adéquation de base (sans IA, gratuit) : correspondance de catégorie, ville, taille, qualité de la fiche, présence d'un canal de contact
+- Score d'adéquation de base (sans IA, gratuit) : correspondance de catégorie, ville, taille, `score_qualite` et `score_confiance` de la fiche (module 07H), présence d'un canal de contact, et bonus pour les **signaux récents** qui correspondent aux `signaux_achat` du profil cible (ex. `recrute`, `marche_attribue`, `nouveau_site`)
+- Particuliers : seulement ceux qui ont un consentement `prospection_par_clients_djeli` actif, ou ceux importés par le client lui-même (module 07G)
 - Ne garde que les prospects qui ont **au moins un moyen de contact autorisé** par la campagne
 - Règle globale : ignorer les contacts présents dans `opt_outs`, et ceux qui ont reçu un premier message Djeli il y a moins de 7 jours (`contacts_recents`)
 
 ### 2. Analyse d'un prospect `src/trigger/analyser-prospect.ts`
 - Débite 4 crédits (clé `analyse:` + prospect_id). Si refus (solde ou plafond) : la campagne passe `en_pause` avec la raison
-- Rassemble : fiche annuaire, lecture du site (module 06), signaux publics disponibles
+- Rassemble : fiche annuaire, lecture du site (module 06), **signaux** de la table `signaux` (recrute, marché attribué, nouveau site, vend en ligne, fait de la pub…) et données de `presence_numerique` ; si l’entreprise est prioritaire, la fiche Google Places à la demande (module 07C, jamais stockée)
 - Prompt `analyse-prospect.ts` (`claude-haiku-5-5` pour lire, `claude-sonnet-5-5` pour la synthèse) → JSON validé :
   `{ resume, besoin_probable, accroche, decideur_probable, langue, taille_estimee, signaux[], canaux: { email: {disponible, score}, whatsapp: {...}, sms: {...}, appel: {...} }, score_adequation, raison_exclusion? }`
 - Si `raison_exclusion` (activité refusée par `docs/INTERDITS.md`, hors cible, entreprise fermée) : statut `injoignable`, pas de message

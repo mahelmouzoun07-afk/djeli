@@ -1,0 +1,893 @@
+<title>Le backend de Djeli</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Mise en page : une salle de projection. Le film (schéma animé) au centre, les chapitres à gauche, le carnet du pilote à droite. */
+:root {
+  --bg: #F7F7F5;
+  --surface: #FFFFFF;
+  --ink: #14110F;
+  --muted: #5E5B57;
+  --line: #D3D2CB;
+  --indigo: #2A2E8C;
+  --indigo-ink: #2A2E8C;
+  --safran: #F4A51C;
+  --baobab: #1F7A50;
+  --rouge: #B4371F;
+  --soft-indigo: #E9EAF6;
+  --soft-safran: #FDF1DA;
+  --soft-baobab: #E3F1EA;
+  --soft-rouge: #F8E5E0;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14110F; --surface: #1E1B19; --ink: #F3F2EE; --muted: #A8A5A1; --line: #3B3734;
+    --indigo: #8D91E6; --indigo-ink: #A9ACF0; --safran: #F4A51C; --baobab: #43B983; --rouge: #E57A63;
+    --soft-indigo: #24254A; --soft-safran: #3A2C12; --soft-baobab: #16352A; --soft-rouge: #3F211B;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14110F; --surface: #1E1B19; --ink: #F3F2EE; --muted: #A8A5A1; --line: #3B3734;
+  --indigo: #8D91E6; --indigo-ink: #A9ACF0; --safran: #F4A51C; --baobab: #43B983; --rouge: #E57A63;
+  --soft-indigo: #24254A; --soft-safran: #3A2C12; --soft-baobab: #16352A; --soft-rouge: #3F211B;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1440px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+p { margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+/* En-tête */
+.top { padding-block: 32px 20px; }
+.top .wrap { display: grid; gap: 10px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.eyebrow b { color: var(--indigo-ink); font-weight: 500; }
+.top h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 800; line-height: 1.08; letter-spacing: -.02em; max-width: 22ch; }
+.top p { color: var(--muted); max-width: 70ch; font-size: 16px; }
+
+/* Lecteur */
+.player { display: grid; gap: 20px; grid-template-columns: 220px minmax(0, 1fr) 320px; align-items: start; padding-block: 8px 40px; }
+.chapters { display: grid; gap: 4px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.chapters h3 { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 10px 10px 4px; }
+.chap { display: grid; grid-template-columns: 26px 1fr; gap: 6px; text-align: left; background: none; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 14px; color: var(--muted); }
+.chap .n { font-family: var(--font-mono); font-size: 12px; padding-top: 2px; }
+.chap:hover { background: var(--surface); color: var(--ink); }
+.chap[aria-current="true"] { background: var(--soft-indigo); color: var(--indigo-ink); font-weight: 600; }
+
+.stage-col { min-width: 0; display: grid; gap: 14px; }
+.scene-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
+.scene-head .num { font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.scene-head h2 { font-size: clamp(22px, 2.6vw, 30px); font-weight: 700; letter-spacing: -.01em; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-family: var(--font-mono); font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--soft-indigo); color: var(--indigo-ink); }
+
+.screen { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stage-scroll { overflow-x: auto; }
+#stage { display: block; width: 100%; min-width: 700px; height: auto; }
+.caption { border-top: 1px solid var(--line); padding: 16px 20px; min-height: 92px; display: grid; gap: 4px; }
+.caption .step { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.caption p { font-size: 17px; line-height: 1.5; max-width: 72ch; }
+
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 14px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.btn:hover { border-color: var(--indigo); }
+.btn.play { background: var(--indigo); border-color: var(--indigo); color: var(--bg); min-width: 108px; justify-content: center; }
+.dots { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; min-width: 120px; }
+.dot { width: 22px; height: 6px; border-radius: 3px; border: 0; padding: 0; background: var(--line); cursor: pointer; position: relative; overflow: hidden; }
+.dot.done { background: var(--indigo); }
+.dot .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--indigo); }
+.kbd { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+
+/* Schéma SVG */
+.node rect { stroke-width: 1.5; transition: opacity .35s, stroke-width .2s; }
+.node text { transition: opacity .35s; }
+.node .kind { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.node .lbl { font-family: var(--font-body); font-size: 14px; font-weight: 600; fill: var(--ink); }
+.k-acteur rect { fill: var(--surface); stroke: var(--ink); }
+.k-acteur .kind { fill: var(--muted); }
+.k-djeli rect { fill: var(--soft-indigo); stroke: var(--indigo); }
+.k-djeli .kind { fill: var(--indigo-ink); }
+.k-ia rect { fill: var(--soft-safran); stroke: var(--safran); }
+.k-ia .kind { fill: var(--ink); }
+.k-base rect { fill: var(--soft-baobab); stroke: var(--baobab); }
+.k-base .kind { fill: var(--baobab); }
+.k-ext rect { fill: var(--surface); stroke: var(--muted); stroke-dasharray: 5 4; }
+.k-ext .kind { fill: var(--muted); }
+.k-regle rect { fill: var(--surface); stroke: var(--indigo); stroke-width: 2.5; }
+.k-regle .kind { fill: var(--indigo-ink); }
+.k-stop rect { fill: var(--soft-rouge); stroke: var(--rouge); }
+.k-stop .kind { fill: var(--rouge); }
+.node.on rect { stroke-width: 3; }
+.node.dim { opacity: .28; }
+.node { transition: opacity .35s; }
+.edge { fill: none; stroke: var(--line); stroke-width: 1.6; transition: stroke .3s, opacity .3s; }
+.edge.on { stroke: var(--indigo); stroke-width: 2.4; }
+.edge.dim { opacity: .35; }
+.elabel { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; transition: opacity .3s; }
+.elabel.on { fill: var(--indigo-ink); }
+.elabel.dim { opacity: .3; }
+#arrow path { fill: var(--line); }
+#arrowOn path { fill: var(--indigo); }
+.packet { fill: var(--safran); stroke: var(--surface); stroke-width: 2; }
+
+/* Carnet du pilote */
+.pilot { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 16px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.pilot h3 { font-size: 18px; font-weight: 700; }
+.pilot h4 { margin: 0 0 6px; font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.pilot ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.pilot li { display: grid; gap: 2px; font-size: 14px; }
+.pilot li code { font-family: var(--font-mono); font-size: 12px; color: var(--indigo-ink); overflow-wrap: anywhere; }
+.pilot .warn { background: var(--soft-rouge); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.prompt { position: relative; }
+.prompt pre { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; padding-bottom: 40px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.copy { position: absolute; right: 8px; bottom: 8px; font-size: 12px; padding: 4px 10px; }
+
+/* Sections du bas */
+.section { padding-block: 36px; border-top: 1px solid var(--line); display: grid; gap: 18px; }
+.section > h2 { font-size: clamp(24px, 3vw, 32px); font-weight: 800; letter-spacing: -.01em; }
+.section > p { color: var(--muted); max-width: 70ch; }
+.rules { display: flex; flex-wrap: wrap; gap: 8px; }
+.rules span { background: var(--soft-safran); border-radius: 999px; padding: 5px 12px; font-size: 14px; }
+.cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card h3 { font-size: 18px; font-weight: 700; }
+.card .when { color: var(--muted); font-size: 14px; }
+.table-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td code { font-family: var(--font-mono); font-size: 12.5px; color: var(--indigo-ink); }
+tr:last-child td { border-bottom: 0; }
+.mod { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.gloss { display: grid; gap: 0 28px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); margin: 0; }
+.gloss div { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.gloss dt { font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+.gloss dd { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+footer { padding-block: 24px 40px; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 1180px) {
+  .player { grid-template-columns: minmax(0, 1fr); }
+  .chapters { position: static; display: flex; overflow-x: auto; gap: 4px; padding-bottom: 4px; }
+  .chapters h3 { display: none; }
+  .chap { white-space: nowrap; grid-template-columns: auto auto; flex: none; }
+  .pilot { position: static; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node, .node rect, .edge, .elabel { transition: none; }
+}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <span class="eyebrow"><b>djeli</b> · le backend expliqué en images</span>
+    <h1>Comment l'agent travaille, de l'analyse au rendez-vous</h1>
+    <p>Un film en 10 scènes, plus 7 situations « que se passe-t-il si… ». Chaque boîte est une pièce du backend, chaque flèche montre qui parle à qui. À droite, le carnet du pilote : ce que tu peux décider et la phrase à donner à Harness.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="player" aria-label="Le film du backend">
+    <nav class="chapters" id="chapters" aria-label="Chapitres"></nav>
+
+    <div class="stage-col">
+      <div class="scene-head">
+        <span class="num" id="scene-num"></span>
+        <h2 id="scene-title"></h2>
+        <div class="tags" id="scene-mods"></div>
+      </div>
+      <div class="screen">
+        <div class="stage-scroll">
+          <svg id="stage" viewBox="0 0 1000 560" role="img" aria-labelledby="scene-title">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+              <marker id="arrowOn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+            </defs>
+            <g id="layer-edges"></g>
+            <g id="layer-labels"></g>
+            <g id="layer-nodes"></g>
+            <g id="layer-packets"></g>
+          </svg>
+        </div>
+        <div class="caption" aria-live="polite">
+          <span class="step" id="step"></span>
+          <p id="caption"></p>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="prev" type="button" aria-label="Étape précédente">← Précédent</button>
+        <button class="btn play" id="play" type="button">▶ Lecture</button>
+        <button class="btn" id="next" type="button" aria-label="Étape suivante">Suivant →</button>
+        <div class="dots" id="dots"></div>
+        <span class="kbd">Flèches ← → du clavier</span>
+      </div>
+    </div>
+
+    <aside class="pilot" id="pilot" aria-label="Carnet du pilote"></aside>
+  </section>
+
+  <section class="section" id="diriger">
+    <h2>Diriger Harness : les demandes types</h2>
+    <p>Copie le modèle, remplace ce qui est entre crochets. Ces 5 réflexes évitent la plupart des problèmes :</p>
+    <div class="rules">
+      <span>Une demande = un seul changement</span>
+      <span>Nomme le module et le fichier</span>
+      <span>Dis ce qu'il ne doit pas toucher</span>
+      <span>Demande toujours des tests</span>
+      <span>Exige le rapport à la fin</span>
+    </div>
+    <div class="cards" id="templates"></div>
+  </section>
+
+  <section class="section" id="ou">
+    <h2>Où changer quoi</h2>
+    <p>Pour chaque décision que tu peux prendre : le fichier où elle vit et le module qui la contient. Donne ces deux informations à Harness.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Ce que tu veux changer</th><th>Où ça se trouve</th><th>Module</th></tr></thead>
+        <tbody id="where"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section" id="mots">
+    <h2>Les mots du backend</h2>
+    <p>Les termes que Harness utilisera dans ses rapports, expliqués simplement.</p>
+    <dl class="gloss" id="gloss"></dl>
+  </section>
+</main>
+
+<footer class="wrap">Djeli · schéma tiré des modules 01 à 15 de <code>docs/harness/</code>. Les chiffres (crédits, délais, horaires) sont ceux du plan actuel et peuvent changer.</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var KIND = { acteur: "Personne", djeli: "Djeli", ia: "IA", base: "Mémoire", ext: "Service externe", regle: "Règle", stop: "Arrêt" };
+  function N(id, x, y, kind, label, w) { return { id: id, x: x, y: y, kind: kind, label: label, w: w || 168 }; }
+  function E(from, to, label, curve) { return { id: from + ">" + to, from: from, to: to, label: label || "", curve: curve || 0 }; }
+  function B(t, on, flow) { return { t: t, on: on || [], flow: flow || [] }; }
+
+  /* Chaîne simple pour les situations : nœuds en serpent sur deux rangées */
+  function chain(items) {
+    var n = items.length, nodes = [], edges = [];
+    var row1 = n <= 4 ? n : Math.ceil(n / 2);
+    items.forEach(function (it, i) {
+      var inRow1 = i < row1;
+      var count = inRow1 ? row1 : n - row1;
+      var idx = inRow1 ? i : (n - row1 - 1) - (i - row1);
+      var gap = 1000 / count;
+      var x = Math.round(gap * idx + gap / 2);
+      var y = n <= 4 ? 280 : (inRow1 ? 170 : 400);
+      nodes.push(N("c" + i, x, y, it[0], it[1], Math.min(190, gap - 30)));
+      if (i > 0) edges.push(E("c" + (i - 1), "c" + i));
+    });
+    var beats = items.map(function (it, i) {
+      return B(it[2], ["c" + i], i > 0 ? ["c" + (i - 1) + ">c" + i] : []);
+    });
+    return { nodes: nodes, edges: edges, beats: beats };
+  }
+
+  var SCENES = [
+    {
+      title: "La vue d'ensemble", mods: ["01", "02"],
+      nodes: [
+        N("client", 95, 280, "acteur", "Le client\n(ex. Koffi)", 150),
+        N("site", 290, 280, "djeli", "Le site Djeli\npages et boutons"),
+        N("robot", 520, 280, "djeli", "Tâches de fond\n24 h/24"),
+        N("cerveau", 520, 100, "ia", "Le cerveau\nClaude"),
+        N("base", 520, 460, "base", "Base de données\nSupabase"),
+        N("canaux", 745, 280, "ext", "Les canaux\nemail, WhatsApp, SMS"),
+        N("prospect", 915, 280, "acteur", "Le prospect", 150),
+        N("paiement", 290, 460, "ext", "Mobile Money\nFedaPay"),
+        N("agenda", 745, 460, "ext", "Google Agenda")
+      ],
+      edges: [E("client", "site"), E("site", "base", "lit, écrit"), E("site", "robot", "lance"), E("robot", "cerveau", "demande"), E("robot", "base"), E("robot", "canaux", "envoie"), E("canaux", "prospect"), E("site", "paiement", "paie"), E("robot", "agenda")],
+      beats: [
+        B("Voici Djeli vu d'en haut. À gauche, ton client. À droite, ses futurs clients : les prospects.", ["client", "prospect"]),
+        B("Le client ne voit que le site : des pages et des boutons. Tout ce qui est derrière s'appelle le backend. C'est ce que Harness va coder.", ["site"], ["client>site"]),
+        B("La base de données est la mémoire : clients, prospects, messages, crédits. Chaque client ne voit que ses propres données.", ["base"], ["site>base"]),
+        B("Les tâches de fond font le travail long, jour et nuit, même quand le client a fermé son téléphone.", ["robot"], ["site>robot", "robot>base"]),
+        B("Le cerveau, Claude, lit, analyse et écrit. Il propose ; c'est le code qui vérifie et décide d'envoyer.", ["cerveau"], ["robot>cerveau"]),
+        B("Les canaux portent les messages jusqu'au prospect, depuis les comptes de Djeli, jamais ceux du client.", ["canaux", "prospect"], ["robot>canaux", "canaux>prospect"]),
+        B("Autour : Mobile Money pour acheter des crédits, Google Agenda pour poser les rendez-vous.", ["paiement", "agenda"], ["site>paiement", "robot>agenda"])
+      ],
+      pilot: {
+        leviers: [["Chaque boîte correspond à un ou plusieurs modules", "Trouve d'abord la boîte, puis le module"], ["Les règles communes à tous les modules", "docs/harness/00-REGLES-GENERALES.md"]],
+        warn: "Règle d'or : Claude propose, le code décide. Un envoi, un débit ou une désinscription ne doit jamais dépendre uniquement de ce que l'IA a répondu.",
+        prompt: "Avant de coder le module [XX], explique-moi en français simple, sans code :\n1. Quelles boîtes du schéma tu vas créer ou modifier.\n2. Ce que ça change pour le client de Djeli.\n3. Les risques.\nAttends mon accord."
+      }
+    },
+    {
+      title: "L'analyse gratuite", mods: ["06", "04"],
+      nodes: [
+        N("visiteur", 95, 120, "acteur", "Le visiteur\ncolle son site", 150),
+        N("lecteur", 300, 120, "djeli", "Lecteur de site\n5 pages max"),
+        N("cerveau", 520, 120, "ia", "Claude remplit\nla fiche"),
+        N("questions", 760, 120, "acteur", "1 à 3 questions\nà cocher"),
+        N("profils", 760, 300, "ia", "3 à 5 profils\nde clients cibles"),
+        N("annuaire", 520, 300, "base", "L'annuaire\ncompte"),
+        N("apercu", 300, 300, "djeli", "Aperçu masqué\nnombre réel"),
+        N("inscription", 95, 300, "acteur", "Inscription", 150),
+        N("memo", 520, 470, "base", "Analyse gardée\n7 jours (jeton)")
+      ],
+      edges: [E("visiteur", "lecteur", "lien"), E("lecteur", "cerveau", "texte"), E("cerveau", "questions", "s'il manque"), E("questions", "profils", "réponses"), E("cerveau", "profils", "", 60), E("profils", "annuaire", "filtres"), E("annuaire", "apercu"), E("apercu", "inscription", "continuer"), E("cerveau", "memo"), E("memo", "inscription", "rattachée")],
+      beats: [
+        B("Le visiteur colle le lien de son site sur la page d'accueil, ou décrit son activité. Pas de compte, pas de crédit : c'est gratuit.", ["visiteur"], ["visiteur>lecteur"]),
+        B("Le lecteur ouvre la page d'accueil et jusqu'à 5 pages utiles : services, tarifs, contact. Il refuse les adresses internes et dangereuses.", ["lecteur"]),
+        B("Claude lit ce texte et remplit une fiche : offres, clientèle, zone, arguments. Consigne stricte : n'inventer aucune information.", ["cerveau"], ["lecteur>cerveau"]),
+        B("S'il manque une information indispensable, il pose 1 à 3 questions à cocher. Sinon, cette étape est sautée.", ["questions"], ["cerveau>questions"]),
+        B("Il propose 3 à 5 profils de clients cibles, avec des secteurs qui existent vraiment dans l'annuaire.", ["profils"], ["questions>profils", "cerveau>profils"]),
+        B("L'annuaire compte les vrais prospects. L'aperçu montre ce nombre réel et des exemples, sans nom, logo ni contact.", ["annuaire", "apercu"], ["profils>annuaire", "annuaire>apercu"]),
+        B("L'analyse est gardée 7 jours avec un jeton. À l'inscription, elle est rattachée au nouveau compte : rien n'est à refaire.", ["memo", "inscription"], ["cerveau>memo", "apercu>inscription", "memo>inscription"])
+      ],
+      pilot: {
+        leviers: [["Nombre de questions maximum (3)", "src/lib/ia/prompts/questions.ts"], ["Nombre de profils cibles (3 à 5)", "src/lib/ia/prompts/profils-cibles.ts"], ["Ce que Claude extrait d'un site", "src/lib/ia/prompts/analyse-activite.ts"], ["Ce que l'aperçu montre ou cache", "src/lib/donnees/apercu.ts"], ["Limite d'abus : 5 analyses par heure", "Server Action d'analyse, module 06"]],
+        prompt: "Module 06 : dans l'aperçu, ajoute la ville de chaque prospect masqué.\n- Modifie seulement src/lib/donnees/apercu.ts et son test.\n- L'aperçu ne doit toujours contenir ni nom, ni email, ni téléphone, ni site.\n- Termine par le rapport."
+      }
+    },
+    {
+      title: "Les crédits", mods: ["03", "05"],
+      nodes: [
+        N("client", 95, 120, "acteur", "Le client paie\n10 000 FCFA", 150),
+        N("momo", 300, 120, "ext", "Mobile Money\nFedaPay"),
+        N("webhook", 520, 120, "djeli", "Confirmation\nde paiement"),
+        N("verif", 760, 120, "regle", "Double\nvérification"),
+        N("solde", 760, 310, "base", "Le solde\nde crédits"),
+        N("histo", 760, 475, "base", "L'historique\nchaque mouvement"),
+        N("action", 300, 310, "djeli", "Une action\nde l'agent"),
+        N("controle", 520, 310, "regle", "Assez de crédits ?\nPlafond du jour ?"),
+        N("alertes", 300, 475, "djeli", "Alertes\n20 % et 5 %"),
+        N("rembourse", 520, 475, "djeli", "Remboursement\nsi non livré")
+      ],
+      edges: [E("client", "momo"), E("momo", "webhook", "c'est payé"), E("webhook", "verif"), E("verif", "solde", "+1 050"), E("action", "controle"), E("controle", "solde", "−6"), E("solde", "histo"), E("rembourse", "solde", "+6"), E("solde", "alertes")],
+      beats: [
+        B("Le client choisit un pack, par exemple 10 000 FCFA, et valide sur son téléphone.", ["client", "momo"], ["client>momo"]),
+        B("FedaPay prévient Djeli que le paiement est passé. Ce message automatique entre deux services s'appelle un webhook.", ["webhook"], ["momo>webhook"]),
+        B("Djeli ne le croit pas sur parole : il redemande le statut à FedaPay et vérifie que le montant est le bon.", ["verif"], ["webhook>verif"]),
+        B("Alors seulement, 1 050 crédits sont ajoutés (pack + bonus). Si la même confirmation arrive 3 fois, ils ne sont ajoutés qu'une fois.", ["solde"], ["verif>solde"]),
+        B("Chaque action payante de l'agent passe 2 contrôles : reste-t-il assez de crédits ? le plafond du jour est-il respecté ?", ["action", "controle"], ["action>controle"]),
+        B("Si oui, les crédits sont retirés, et chaque mouvement est noté dans l'historique. Le solde ne peut jamais passer sous zéro.", ["solde", "histo"], ["controle>solde", "solde>histo"]),
+        B("Message non livré ? Les crédits sont rendus automatiquement, une seule fois.", ["rembourse"], ["rembourse>solde"]),
+        B("Sous 20 %, puis sous 5 % du dernier rechargement, le client est prévenu.", ["alertes"], ["solde>alertes"])
+      ],
+      pilot: {
+        leviers: [["Coût de chaque action, packs, bonus", "src/lib/constants.ts"], ["Bonus de premier achat (0 tant que non validé)", "src/lib/constants.ts"], ["Validité des crédits (12 mois)", "Fonction SQL expirer_credits, module 03"], ["Seuils d'alerte 20 % et 5 %", "src/lib/credits/alertes.ts"], ["Prestataire de paiement", "src/lib/paiements/"]],
+        warn: "Ne laisse jamais Harness modifier un solde autrement que par les fonctions debiter, crediter et rembourser. C'est l'argent des clients.",
+        prompt: "Module 03 : le SMS passe de 6 à 5 crédits.\n- Modifie seulement le coût dans src/lib/constants.ts.\n- Mets à jour les tests qui utilisent ce chiffre.\n- Ne touche pas aux fonctions SQL.\n- Termine par le rapport."
+      }
+    },
+    {
+      title: "Lancer une campagne", mods: ["08"],
+      nodes: [
+        N("client", 95, 120, "acteur", "Le client lance\nune campagne", 150),
+        N("estim", 300, 120, "djeli", "Estimation\nmin et max"),
+        N("selection", 520, 120, "base", "Recherche\ndans l'annuaire"),
+        N("filtres", 760, 120, "regle", "Filtres : STOP,\ncontacté < 7 jours"),
+        N("analyse", 760, 300, "ia", "Analyse du prospect\n4 crédits"),
+        N("cache", 760, 470, "base", "Gardée 30 jours"),
+        N("exclu", 520, 470, "stop", "Écarté : activité\ninterdite, fermé"),
+        N("choix", 520, 300, "regle", "Choix du canal\n(règles fixes)"),
+        N("sequence", 300, 300, "djeli", "Séquence\nJ1 → J90")
+      ],
+      edges: [E("client", "estim"), E("estim", "selection", "accord"), E("selection", "filtres"), E("filtres", "analyse"), E("analyse", "cache"), E("analyse", "exclu"), E("analyse", "choix"), E("choix", "sequence")],
+      beats: [
+        B("Le client choisit un profil cible et lance. Djeli affiche d'abord une estimation : le minimum et le maximum de crédits.", ["client", "estim"], ["client>estim"]),
+        B("Après son accord, Djeli cherche dans l'annuaire les entreprises qui correspondent au profil.", ["selection"], ["estim>selection"]),
+        B("Deux filtres obligatoires : quelqu'un qui a dit STOP, ou qui a reçu un premier message Djeli il y a moins de 7 jours, est écarté.", ["filtres"], ["selection>filtres"]),
+        B("Claude analyse chaque prospect : son besoin probable, une accroche, les canaux où il répond. Coût : 4 crédits.", ["analyse"], ["filtres>analyse"]),
+        B("L'analyse est gardée 30 jours : si un autre client vise la même entreprise, Djeli ne repaie pas l'IA.", ["cache"], ["analyse>cache"]),
+        B("Si l'activité fait partie des refus (jeux d'argent, armes…) ou si l'entreprise est fermée, le prospect est écarté.", ["exclu"], ["analyse>exclu"]),
+        B("Le choix du canal suit des règles écrites, sans IA : grande entreprise, email d'abord ; PME et particuliers, WhatsApp d'abord.", ["choix"], ["analyse>choix"]),
+        B("Résultat : une séquence par prospect. Par exemple J1 WhatsApp, J3 relance, J5 email, jusqu'au dernier message poli.", ["sequence"], ["choix>sequence"])
+      ],
+      pilot: {
+        leviers: [["Seuil « grande entreprise » (50 employés)", "src/lib/prospects/choix-canal.ts"], ["Part d'exploration en mode automatique (20 %)", "src/lib/prospects/choix-canal.ts"], ["Règle des 7 jours entre deux premiers messages", "Table contacts_recents, modules 08 et 10"], ["Durée du cache des analyses (30 jours)", "Table cache_analyses"], ["Activités refusées", "docs/INTERDITS.md, section 4"]],
+        prompt: "Module 08 : une entreprise est « grande » à partir de 30 employés au lieu de 50.\n- Modifie la constante dans src/lib/prospects/choix-canal.ts.\n- Adapte les tests : une entreprise de 35 employés doit commencer par l'email.\n- Ne touche à rien d'autre."
+      }
+    },
+    {
+      title: "Écrire et vérifier", mods: ["09"],
+      nodes: [
+        N("infos", 95, 280, "base", "Ce que Djeli\nsait du prospect", 150),
+        N("style", 300, 100, "acteur", "Style validé\nune fois"),
+        N("redac", 300, 280, "ia", "Claude rédige"),
+        N("controles", 520, 280, "regle", "Contrôles\ndu code"),
+        N("interdits", 760, 100, "base", "La liste\nINTERDITS.md"),
+        N("verif", 760, 280, "ia", "Une 2e IA relit"),
+        N("planifie", 915, 440, "djeli", "Planifié", 150),
+        N("bloque", 600, 460, "stop", "Bloqué :\njamais envoyé")
+      ],
+      edges: [E("infos", "redac"), E("style", "redac"), E("redac", "controles"), E("controles", "redac", "à corriger", -70), E("controles", "verif", "ok"), E("interdits", "verif"), E("verif", "planifie", "valide"), E("verif", "bloque", "refusé")],
+      beats: [
+        B("Claude rédige avec tout ce que Djeli sait : l'activité du client, l'analyse du prospect, l'étape de la séquence, le canal.", ["infos", "redac"], ["infos>redac"]),
+        B("Le style a été validé une seule fois par le client, sur 3 exemples. Ensuite, l'agent écrit seul.", ["style"], ["style>redac"]),
+        B("Le code contrôle d'abord : longueur, pas de lien au premier message, pas de faux « RE: », aucun prix qui n'existe pas.", ["controles"], ["redac>controles"]),
+        B("Un problème ? Claude réécrit, 2 fois au maximum.", ["controles", "redac"], ["controles>redac"]),
+        B("Une seconde IA relit le message avec la liste des interdits : fausses promesses, fausse familiarité, pression…", ["verif", "interdits"], ["controles>verif", "interdits>verif"]),
+        B("Validé : le message est planifié. Sinon : il est bloqué, rien n'est envoyé et aucun crédit n'est dépensé.", ["planifie", "bloque"], ["verif>planifie", "verif>bloque"])
+      ],
+      pilot: {
+        leviers: [["Ton, longueur, structure des messages", "src/lib/ia/prompts/redaction.ts"], ["Longueurs maximales par canal", "src/lib/redaction/controles.ts"], ["Mots et phrases interdits", "src/lib/redaction/mots-interdits.ts"], ["Ce que vérifie la 2e IA", "src/lib/ia/prompts/verification.ts + docs/INTERDITS.md"]],
+        prompt: "Module 09 : modifie le prompt src/lib/ia/prompts/redaction.ts.\n- Sur WhatsApp, l'agent tutoie seulement si le prospect a tutoyé ; sinon il vouvoie.\n- Augmente la VERSION du prompt.\n- Ajoute un test avec un faux client IA.\n- Ne change pas le format JSON de sortie."
+      }
+    },
+    {
+      title: "La garde : 6 portes avant chaque envoi", mods: ["10"],
+      nodes: [
+        N("msg", 80, 130, "djeli", "Message\nplanifié", 130),
+        N("g1", 240, 130, "regle", "1. Liste\nSTOP", 140),
+        N("g2", 400, 130, "regle", "2. Règle\ndes 7 jours", 140),
+        N("g3", 560, 130, "regle", "3. Horaires,\nvendredi, fériés", 140),
+        N("g4", 720, 130, "regle", "4. Canal permis\ndans ce pays", 140),
+        N("g5", 880, 130, "regle", "5. Débit\ndes crédits", 140),
+        N("o1", 240, 320, "stop", "Refus\npour toujours", 140),
+        N("o2", 400, 320, "djeli", "Attendre", 140),
+        N("o3", 560, 320, "djeli", "Reporté au\nprochain créneau", 140),
+        N("o4", 720, 320, "stop", "Refusé", 140),
+        N("envoi", 880, 320, "ext", "6. Envoi", 140),
+        N("remb", 880, 475, "base", "Échec :\ncrédits rendus", 140)
+      ],
+      edges: [E("msg", "g1"), E("g1", "g2"), E("g2", "g3"), E("g3", "g4"), E("g4", "g5"), E("g1", "o1", "STOP"), E("g2", "o2", "< 7 j"), E("g3", "o3", "hors heures"), E("g4", "o4", "interdit"), E("g5", "envoi", "ok"), E("envoi", "remb")],
+      beats: [
+        B("Avant tout envoi, quel que soit le canal, le message passe 6 portes, toujours dans le même ordre. Aucun envoi ne peut les contourner.", ["msg"], ["msg>g1"]),
+        B("Porte 1 : la personne a-t-elle dit STOP, même à un autre client de Djeli ? Alors c'est non, pour toujours.", ["g1", "o1"], ["g1>o1"]),
+        B("Porte 2 : a-t-elle reçu un premier message Djeli il y a moins de 7 jours ? On attend.", ["g2", "o2"], ["g1>g2", "g2>o2"]),
+        B("Porte 3 : est-il entre 8 h et 19 h chez le prospect, hors prière du vendredi et jours fériés ? Sinon, report au prochain créneau.", ["g3", "o3"], ["g2>g3", "g3>o3"]),
+        B("Porte 4 : ce canal est-il autorisé dans le pays du prospect ?", ["g4", "o4"], ["g3>g4", "g4>o4"]),
+        B("Porte 5 : les crédits sont retirés. S'il n'y en a pas assez, ou si le plafond du jour est atteint, la campagne se met en pause.", ["g5"], ["g4>g5"]),
+        B("Porte 6 : l'envoi. S'il échoue, les crédits sont rendus.", ["envoi", "remb"], ["g5>envoi", "envoi>remb"])
+      ],
+      pilot: {
+        leviers: [["Horaires autorisés (8 h – 19 h)", "src/lib/envoi/garde.ts"], ["Pays à majorité musulmane, canaux interdits par pays", "src/lib/envoi/regles-pays.ts"], ["Jours fériés", "Table jours_feries"], ["Délai entre deux premiers messages (7 jours)", "src/lib/envoi/garde.ts"]],
+        warn: "Si Harness propose un envoi qui ne passe pas par garde.ts, refuse. C'est la protection de tous les clients en même temps.",
+        prompt: "Module 10 : les messages partent de 8 h 30 à 18 h 30, heure du prospect, au lieu de 8 h à 19 h.\n- Modifie seulement la constante des horaires dans src/lib/envoi/garde.ts.\n- Mets à jour les tests de la garde.\n- Ne touche à aucun autre module."
+      }
+    },
+    {
+      title: "Le planificateur", mods: ["11"],
+      nodes: [
+        N("horloge", 95, 280, "djeli", "Horloge\ntoutes les 5 min", 150),
+        N("verrou", 300, 100, "regle", "Verrou : jamais\n2 fois le même"),
+        N("file", 300, 280, "base", "Messages dont\nl'heure est venue"),
+        N("check", 520, 280, "regle", "Campagne active ?\nPas de réponse ?"),
+        N("annule", 520, 460, "stop", "Annulé"),
+        N("garde", 745, 280, "regle", "La garde\n6 portes"),
+        N("canaux", 915, 280, "ext", "Canaux", 140),
+        N("suivant", 745, 460, "ia", "Rédiger l'étape\nsuivante")
+      ],
+      edges: [E("horloge", "file"), E("verrou", "file"), E("file", "check"), E("check", "annule", "non"), E("check", "garde", "oui"), E("garde", "canaux", "2 à 8 min d'écart"), E("garde", "suivant", "après envoi"), E("suivant", "file", "replanifiée", 120)],
+      beats: [
+        B("Une horloge réveille l'agent toutes les 5 minutes, jour et nuit.", ["horloge"], ["horloge>file"]),
+        B("Il prend les messages dont l'heure est arrivée. Un verrou garantit qu'un message ne part jamais deux fois, même si deux réveils se chevauchent.", ["file", "verrou"], ["verrou>file"]),
+        B("Il revérifie : la campagne est-elle toujours active ? le prospect a-t-il répondu entre-temps ? Si oui, le message est annulé.", ["check", "annule"], ["file>check", "check>annule"]),
+        B("Sinon : la garde, puis l'envoi, avec 2 à 8 minutes d'écart entre deux messages d'une même boîte. Pas de rafale.", ["garde", "canaux"], ["check>garde", "garde>canaux"]),
+        B("Après chaque envoi, Claude rédige l'étape suivante de la séquence, qui retourne dans la file avec sa date.", ["suivant"], ["garde>suivant", "suivant>file"])
+      ],
+      pilot: {
+        leviers: [["Fréquence de l'horloge (5 min)", "src/trigger/planificateur.ts"], ["Écart entre deux messages (2 à 8 min)", "src/trigger/planificateur.ts"], ["Étapes de la séquence (J1, J3, J5…)", "campagnes.sequence"], ["Pause, reprise, plafond par campagne", "Server Actions des campagnes, module 11"]],
+        prompt: "Module 11 : l'écart entre deux messages d'une même boîte passe à 4 à 12 minutes.\n- Modifie seulement src/trigger/planificateur.ts et son test.\n- Vérifie qu'aucun message ne part deux fois.\n- Termine par le rapport."
+      }
+    },
+    {
+      title: "Quand le prospect répond", mods: ["12"],
+      nodes: [
+        N("prospect", 85, 270, "acteur", "Le prospect\nrépond", 140),
+        N("entree", 270, 270, "djeli", "Entrée unique\ntous canaux"),
+        N("vocal", 270, 460, "ia", "Note vocale :\ntranscription"),
+        N("classe", 480, 270, "ia", "Claude classe\nla réponse"),
+        N("stop", 700, 70, "stop", "STOP : liste noire\npour tout Djeli"),
+        N("refus", 700, 170, "djeli", "Refus : merci,\nfin"),
+        N("absent", 700, 270, "djeli", "Absent : reprise\nau retour"),
+        N("interet", 700, 380, "ia", "Intéressé : réponse\nen 5 à 20 min"),
+        N("rdv", 905, 300, "djeli", "Rendez-vous", 150),
+        N("client", 905, 470, "acteur", "Le client\n(alerte WhatsApp)", 150)
+      ],
+      edges: [E("prospect", "entree"), E("entree", "vocal", "audio"), E("entree", "classe"), E("vocal", "classe"), E("classe", "stop"), E("classe", "refus"), E("classe", "absent"), E("classe", "interet"), E("interet", "rdv"), E("interet", "client", "info inconnue"), E("vocal", "client", "incompréhensible", 40)],
+      beats: [
+        B("Toutes les réponses arrivent au même endroit, quel que soit le canal. Les relances prévues pour ce prospect sont aussitôt annulées.", ["prospect", "entree"], ["prospect>entree"]),
+        B("Une note vocale est transcrite. Si elle reste incompréhensible, elle part chez le client, avec le contexte de la conversation.", ["vocal", "client"], ["entree>vocal", "vocal>client"]),
+        B("Claude classe la réponse. S'il n'est pas sûr à 70 %, il ne répond pas : il transmet au client.", ["classe"], ["entree>classe", "vocal>classe"]),
+        B("STOP ou « ne m'écrivez plus » : le contact va sur la liste noire de tout Djeli. Une confirmation courte, puis plus rien, jamais.", ["stop"], ["classe>stop"]),
+        B("Un refus : un merci court et c'est fini. Un message d'absence : l'agent reprend à la date de retour.", ["refus", "absent"], ["classe>refus", "classe>absent"]),
+        B("Intéressé ou question : l'agent répond après 5 à 20 minutes, comme un humain. Les conversations sont gratuites.", ["interet"], ["classe>interet"]),
+        B("S'il ne connaît pas la réponse (prix précis, stock, délai), il ne l'invente pas : il dit « je vérifie » et demande au client.", ["interet", "client"], ["interet>client"]),
+        B("Si le prospect veut se voir : on passe au rendez-vous.", ["rdv"], ["interet>rdv"])
+      ],
+      pilot: {
+        leviers: [["Délai avant réponse (5 à 20 min)", "src/lib/reponses/repondre.ts"], ["Seuil de confiance (70 %)", "src/lib/ia/prompts/classement.ts et son code"], ["Ce que l'agent a le droit de répondre", "src/lib/ia/prompts/reponse-conversation.ts"], ["Les catégories de réponses", "Type classe_reponse, module 02"]],
+        warn: "Une désinscription doit toujours être appliquée par le code, même si l'IA hésite. Mieux vaut perdre un prospect que contacter quelqu'un qui a dit STOP.",
+        prompt: "Module 12 : ajoute la catégorie « demande de devis ».\n- Propose d'abord le plan : migration du type classe_reponse, prompt de classement, réaction de l'agent, alerte au client.\n- Attends mon accord avant de coder.\n- Travaille sur une nouvelle branche."
+      }
+    },
+    {
+      title: "Rendez-vous, alertes et support", mods: ["13", "14"],
+      nodes: [
+        N("prospect", 95, 120, "acteur", "Le prospect veut\nun rendez-vous", 160),
+        N("agent", 320, 120, "ia", "L'agent propose\n2 ou 3 créneaux"),
+        N("agenda", 560, 120, "ext", "Google Agenda\ndu client"),
+        N("rdv", 800, 120, "base", "Rendez-vous\nréservé"),
+        N("rappels", 800, 290, "djeli", "Rappels : veille\net 1 h avant"),
+        N("alertes", 560, 290, "djeli", "Alertes au client"),
+        N("numero", 320, 400, "djeli", "Numéro WhatsApp\nglobal Djeli"),
+        N("client", 95, 400, "acteur", "Le client", 150),
+        N("support", 560, 475, "ia", "Support 24 h/24"),
+        N("appel", 800, 475, "ia", "Appel IA :\nprospects chauds")
+      ],
+      edges: [E("prospect", "agent"), E("agent", "agenda", "créneaux libres"), E("agenda", "rdv"), E("rdv", "rappels"), E("rdv", "alertes"), E("alertes", "numero"), E("numero", "client"), E("client", "numero", "pause, solde", -60), E("numero", "support"), E("appel", "rappels")],
+      beats: [
+        B("Le prospect veut se voir. L'agent lit les créneaux libres du Google Agenda du client et en propose 2 ou 3.", ["prospect", "agent", "agenda"], ["prospect>agent", "agent>agenda"]),
+        B("Le prospect choisit. L'agent réserve, puis envoie des rappels la veille et 1 h avant.", ["rdv", "rappels"], ["agenda>rdv", "rdv>rappels"]),
+        B("Le client est prévenu sur WhatsApp et par email : prospect intéressé, rendez-vous, solde bas, problème sur un canal. Djeli ne cache jamais un problème.", ["alertes", "numero", "client"], ["rdv>alertes", "alertes>numero", "numero>client"]),
+        B("Le client peut piloter par message : « pause », « solde », « bilan ». Tout changement de réglage est reformulé et demande un « Oui ».", ["client", "numero"], ["client>numero"]),
+        B("Le même numéro sert au support, 24 h/24. Il répond à partir de la documentation et ne peut rien modifier ni rembourser.", ["support"], ["numero>support"]),
+        B("Les prospects chauds peuvent recevoir un appel IA, qui dit dès la première phrase qu'il est un assistant virtuel. Jamais vers les États-Unis.", ["appel"], ["appel>rappels"])
+      ],
+      pilot: {
+        leviers: [["Moments des rappels", "Module 13, prise de rendez-vous"], ["Textes des alertes au client", "src/lib/notifications/modeles/"], ["Commandes de pilotage par WhatsApp", "Module 13, section 4"], ["Ce que sait le support", "docs/support/*.md"], ["Horaires et tentatives des appels", "src/lib/appels/"]],
+        prompt: "Module 13 : ajoute un 3e rappel au prospect, 3 h avant le rendez-vous.\n- Modifie seulement la planification des rappels et ses tests.\n- Le prospect ne doit jamais recevoir deux fois le même rappel.\n- Termine par le rapport."
+      }
+    },
+    {
+      title: "La carte des modules", mods: ["01 → 15"],
+      nodes: [
+        N("m01", 85, 110, "djeli", "01 Fondations", 140), N("m02", 250, 110, "base", "02 Base", 140), N("m03", 415, 110, "base", "03 Crédits", 140),
+        N("m04", 580, 110, "djeli", "04 Comptes", 140), N("m05", 745, 110, "ext", "05 Paiements", 140), N("m06", 910, 110, "ia", "06 Analyse", 140),
+        N("m07", 910, 290, "base", "07 Annuaire", 140), N("m08", 745, 290, "ia", "08 Prospects", 140), N("m09", 580, 290, "ia", "09 Rédaction", 140),
+        N("m10", 415, 290, "regle", "10 Envoi", 140), N("m11", 250, 290, "djeli", "11 Planificateur", 140), N("m12", 85, 290, "ia", "12 Réponses", 140),
+        N("m13", 85, 470, "djeli", "13 Rendez-vous", 140), N("m14", 250, 470, "ia", "14 Appels", 140), N("m15", 415, 470, "regle", "15 Vérification", 140)
+      ],
+      edges: [E("m01", "m02"), E("m02", "m03"), E("m03", "m04"), E("m04", "m05"), E("m05", "m06"), E("m06", "m07"), E("m07", "m08"), E("m08", "m09"), E("m09", "m10"), E("m10", "m11"), E("m11", "m12"), E("m12", "m13"), E("m13", "m14"), E("m14", "m15")],
+      beats: [
+        B("Les modules se construisent dans cet ordre. Chacun s'appuie sur ceux d'avant : on ne saute pas d'étape."),
+        B("Le socle, de 01 à 04 : le projet, la base de données, les crédits, les comptes. Rien n'est visible, mais tout en dépend.", ["m01", "m02", "m03", "m04"], ["m01>m02", "m02>m03", "m03>m04"]),
+        B("L'argent et la connaissance : 05 paiements, 06 analyse, 07 annuaire. Ces trois-là peuvent avancer en parallèle, dans trois sessions Harness.", ["m05", "m06", "m07"]),
+        B("Le cœur de l'agent, de 08 à 11 : il trouve, écrit, vérifie, envoie et relance tout seul.", ["m08", "m09", "m10", "m11"], ["m07>m08", "m08>m09", "m09>m10", "m10>m11"]),
+        B("La relation, de 12 à 14 : réponses, rendez-vous, appels.", ["m12", "m13", "m14"], ["m11>m12", "m12>m13", "m13>m14"]),
+        B("Enfin 15 : on teste les 10 scénarios et la sécurité avant le lancement.", ["m15"], ["m14>m15"])
+      ],
+      pilot: {
+        leviers: [["L'ordre et les dépendances", "docs/harness/README.md"], ["Ce que tu prépares avant chaque module", "docs/harness/PREPARATION.md"], ["Le contenu de chaque module", "docs/harness/01 à 15"]],
+        prompt: "[colle ici 00-REGLES-GENERALES.md]\n\n[colle ici le module, par exemple 03-credits.md]\n\nCode ce module. Crée d'abord la branche module-03 depuis main. Termine par le rapport demandé à la section 7 des règles."
+      }
+    }
+  ];
+
+  var SITUATIONS = [
+    { title: "Un prospect répond STOP", mods: ["10", "12"], items: [
+      ["acteur", "Le prospect\nécrit « STOP »", "Le prospect répond « STOP » à un message WhatsApp envoyé pour le client A."],
+      ["djeli", "Entrée unique", "La réponse arrive dans l'entrée unique, comme toutes les autres."],
+      ["ia", "Classée :\ndésinscription", "Elle est classée « désinscription ». Le mot STOP est aussi reconnu directement par le code, sans attendre l'IA."],
+      ["base", "Liste noire\nglobale", "Le numéro est ajouté à la liste noire de tout Djeli."],
+      ["djeli", "Une confirmation\ncourte", "Le prospect reçoit une seule confirmation courte."],
+      ["stop", "Plus rien, pour\naucun client", "Plus tard, le client B veut le contacter : la porte 1 de la garde refuse. Pour toujours."]
+    ], pilot: { leviers: [["Mots qui déclenchent une désinscription", "Modules 10 et 12"]], prompt: "Écris un test de bout en bout : un prospect répond STOP au client A, puis le client B lance une campagne qui le cible. Vérifie qu'aucun message ne lui est envoyé. N'ajoute aucune fonctionnalité." } },
+    { title: "Le solde tombe à 0", mods: ["03", "11"], items: [
+      ["djeli", "Étape J3\nprête à partir", "Une relance J3 est prête à partir."],
+      ["regle", "Porte 5 :\ncrédits ?", "La porte 5 tente de retirer les crédits."],
+      ["stop", "Solde à 0 :\nnouveaux envois\nen attente", "Le solde est à 0 : les nouveaux contacts et les relances attendent."],
+      ["acteur", "Le client\nest prévenu", "Le client reçoit une alerte « solde épuisé » sur WhatsApp et par email."],
+      ["ia", "Les conversations\ncontinuent", "L'agent continue de répondre aux prospects qui ont déjà répondu : c'est gratuit."],
+      ["djeli", "Recharge :\nreprise auto", "Dès que le client recharge, les envois reprennent là où ils s'étaient arrêtés."]
+    ], pilot: { leviers: [["Ce qui reste gratuit à 0 crédit", "src/lib/constants.ts et module 12"]], prompt: "Module 11 : vérifie par un test qu'à 0 crédit, l'agent répond toujours aux conversations ouvertes mais n'envoie aucune nouvelle relance. Corrige seulement si le test échoue, et explique la cause." } },
+    { title: "Un message est prévu à 21 h", mods: ["10"], items: [
+      ["djeli", "Message prêt\nà 21 h à Dakar", "Un message est prêt à 21 h, heure de Dakar."],
+      ["regle", "Porte 3 :\n8 h – 19 h", "La porte 3 vérifie l'heure du prospect : 21 h est hors des horaires."],
+      ["djeli", "Reporté au\nlendemain 8 h", "Le message est reporté au lendemain, 8 h."],
+      ["regle", "Vendredi ? Férié ?", "Si le lendemain est un jour férié au Sénégal, ou un vendredi midi, il est encore décalé."],
+      ["ext", "Envoi", "Ensuite seulement, il part."]
+    ], pilot: { leviers: [["Horaires et jours fériés", "src/lib/envoi/garde.ts, table jours_feries"]], prompt: "Module 10 : ajoute les jours fériés 2027 du Bénin, du Sénégal et de la Côte d'Ivoire dans la table jours_feries, par une nouvelle migration. Cite la source officielle de chaque date dans ton rapport." } },
+    { title: "Le paiement est confirmé 3 fois", mods: ["05", "03"], items: [
+      ["ext", "FedaPay envoie\n3 confirmations", "À cause d'un souci réseau, FedaPay envoie 3 fois la même confirmation."],
+      ["regle", "Signature\nvérifiée", "Djeli vérifie que chaque message vient bien de FedaPay."],
+      ["regle", "Statut redemandé\nà FedaPay", "Il redemande le statut du paiement et vérifie le montant."],
+      ["base", "Clé unique du\npaiement", "Chaque paiement a une clé unique. La 2e et la 3e confirmation trouvent la clé déjà utilisée."],
+      ["base", "Crédits ajoutés\nune seule fois", "Résultat : les crédits ne sont ajoutés qu'une fois. C'est ce qu'on appelle l'idempotence."]
+    ], pilot: { leviers: [["Clé d'idempotence des paiements", "Module 05, webhook"]], prompt: "Module 05 : écris un test qui envoie 3 fois la même confirmation de paiement, en même temps. Le client doit recevoir ses crédits une seule fois. Corrige seulement si le test échoue." } },
+    { title: "Une note vocale incompréhensible", mods: ["12"], items: [
+      ["acteur", "Le prospect envoie\nune note vocale", "Le prospect répond par une note vocale."],
+      ["ia", "Transcription\nWhisper", "Djeli la transcrit en texte."],
+      ["regle", "Transcription\nfiable ?", "La transcription est trop incertaine (bruit, langue locale)."],
+      ["acteur", "Transmise au\nclient + contexte", "La note part chez le client, avec le nom du prospect, la campagne et les derniers messages."],
+      ["stop", "L'agent ne répond\npas à sa place", "L'agent ne devine pas : c'est le client qui répond."]
+    ], pilot: { leviers: [["Seuil de fiabilité de la transcription", "src/lib/reponses/transcription.ts"]], prompt: "Module 12 : quand une note vocale est transmise au client, ajoute dans l'alerte le lien pour l'écouter. Modifie seulement le modèle d'alerte et son test." } },
+    { title: "Une boîte email est signalée", mods: ["10"], items: [
+      ["acteur", "Un destinataire\nsignale le message", "Un destinataire marque un email comme indésirable."],
+      ["djeli", "La lecture des\nréponses le détecte", "La lecture automatique des réponses détecte la plainte."],
+      ["base", "Liste noire +\nsanté en baisse", "Le destinataire va sur la liste noire et la note de santé de la boîte baisse."],
+      ["stop", "Boîte en pause", "Sous un seuil, la boîte est mise en pause automatiquement."],
+      ["djeli", "Les autres boîtes\nprennent le relais", "Les envois suivants passent par les autres boîtes. L'équipe est prévenue."]
+    ], pilot: { leviers: [["Seuil de santé d'une boîte", "src/lib/envoi/email.ts"], ["Quota par boîte et par jour", "Table boites_envoi"]], prompt: "Module 10 : une boîte se met en pause dès 2 plaintes dans la même journée. Modifie seulement la règle de santé dans src/lib/envoi/email.ts et ses tests." } },
+    { title: "L'IA invente un prix", mods: ["09"], items: [
+      ["ia", "Claude écrit\n« 50 000 FCFA »", "En rédigeant, Claude écrit un prix : 50 000 FCFA."],
+      ["regle", "Ce prix est-il\ndans l'analyse ?", "Le contrôle du code cherche ce chiffre dans l'analyse du client. Il n'y est pas."],
+      ["ia", "Réécriture", "Claude doit réécrire sans ce prix."],
+      ["regle", "Encore faux\naprès 2 essais", "S'il recommence 2 fois de suite…"],
+      ["stop", "Bloqué : rien\nn'est envoyé", "… le message est bloqué. Rien ne part, aucun crédit n'est dépensé, l'équipe voit pourquoi."]
+    ], pilot: { leviers: [["Contrôle des chiffres inventés", "src/lib/redaction/controles.ts"]], prompt: "Module 09 : le contrôle des prix doit aussi reconnaître « 50.000 F », « 50 000 francs » et « 50k ». Ajoute ces cas aux tests, puis adapte le contrôle." } }
+  ];
+
+  SITUATIONS.forEach(function (s) {
+    var c = chain(s.items);
+    SCENES.push({ title: s.title, mods: s.mods, nodes: c.nodes, edges: c.edges, beats: c.beats, pilot: s.pilot, situation: true });
+  });
+
+  var TEMPLATES = [
+    { t: "Lancer un module", w: "Au début de chaque nouvelle session Harness.", p: "[colle ici 00-REGLES-GENERALES.md]\n\n[colle ici le module, par exemple 03-credits.md]\n\nCode ce module. Crée d'abord la branche module-03 depuis main. Termine par le rapport demandé à la section 7 des règles." },
+    { t: "Demander le plan d'abord", w: "Avant un gros changement, pour garder la main.", p: "Avant de coder, explique-moi en français simple, sans code :\n1. Ce que tu vas créer ou modifier (fichiers, tables).\n2. Ce que ça change pour le client de Djeli.\n3. Les risques.\nAttends mon accord avant d'écrire du code." },
+    { t: "Signaler une erreur", w: "Quand le build, le lint ou les tests échouent.", p: "La commande [npm run build] échoue avec l'erreur ci-dessous. Trouve la cause et corrige-la sans désactiver aucune vérification (TypeScript, ESLint, RLS). Relance build, lint et tests. Explique la cause en deux phrases.\n\n[colle ici l'erreur complète]" },
+    { t: "Changer une règle", w: "Un chiffre, un délai, un horaire, un coût.", p: "Changement de règle, module [XX] : [ancienne valeur] devient [nouvelle valeur].\n- Modifie seulement [fichier].\n- Mets à jour les tests concernés.\n- Ne touche à aucun autre module.\n- Liste les fichiers modifiés dans ton rapport." },
+    { t: "Modifier un prompt de l'IA", w: "Changer la façon dont Claude analyse, écrit ou répond.", p: "Modifie le prompt [src/lib/ia/prompts/xxx.ts] (module [XX]) :\n- [ta consigne, avec un exemple concret].\n- Augmente la VERSION du prompt.\n- Ajoute un test avec un faux client IA.\n- Ne change pas le format JSON de sortie." },
+    { t: "Ajouter une fonctionnalité", w: "Une idée nouvelle qui n'est dans aucun module.", p: "Nouvelle demande : [décris ce que tu veux, avec un exemple concret].\n- Respecte 00-REGLES-GENERALES.md.\n- Propose d'abord le plan (fichiers, tables, tests) et attends mon accord.\n- Travaille sur une nouvelle branche." }
+  ];
+
+  var WHERE = [
+    ["Coût en crédits d'une action, packs, bonus", "src/lib/constants.ts", "03"],
+    ["Validité des crédits, seuils d'alerte", "Fonctions SQL des crédits, src/lib/credits/alertes.ts", "03"],
+    ["Prestataire de paiement (SaaSPay, FedaPay…)", "src/lib/paiements/", "05"],
+    ["Ce que l'IA comprend d'un site, les questions, les profils cibles", "src/lib/ia/prompts/analyse-activite.ts, questions.ts, profils-cibles.ts", "06"],
+    ["Ce que montre l'aperçu avant inscription", "src/lib/donnees/apercu.ts", "06"],
+    ["Les catégories d'entreprises de l'annuaire", "src/lib/donnees/categories.ts", "07"],
+    ["Règle grande entreprise / PME, choix du canal", "src/lib/prospects/choix-canal.ts", "08"],
+    ["Les étapes de relance (J1 à J90)", "campagnes.sequence, src/lib/prospects/choix-canal.ts", "08, 11"],
+    ["Ton et longueur des messages", "src/lib/ia/prompts/redaction.ts, src/lib/redaction/controles.ts", "09"],
+    ["Mots et phrases interdits", "src/lib/redaction/mots-interdits.ts, docs/INTERDITS.md", "09"],
+    ["Horaires d'envoi, pays, jours fériés", "src/lib/envoi/garde.ts, regles-pays.ts, table jours_feries", "10"],
+    ["Rythme des envois et des relances", "src/trigger/planificateur.ts", "11"],
+    ["Délai de réponse de l'agent, seuil de confiance", "src/lib/reponses/repondre.ts, prompts/classement.ts", "12"],
+    ["Textes des alertes envoyées au client", "src/lib/notifications/modeles/", "13"],
+    ["Règles des appels IA", "src/lib/appels/", "14"]
+  ];
+
+  var GLOSS = [
+    ["Backend", "Tout ce qui travaille derrière les pages : la mémoire, les calculs, les envois. Le client ne le voit jamais."],
+    ["Base de données", "La mémoire de Djeli, rangée en tableaux. Ici, Supabase."],
+    ["Table", "Un tableau de la base : une ligne par prospect, par message, par paiement…"],
+    ["Migration", "Un fichier qui crée ou change des tables. On en ajoute toujours une nouvelle, on ne réécrit jamais une ancienne."],
+    ["RLS", "Row Level Security : la règle de la base qui empêche un client de voir les données d'un autre."],
+    ["API", "La porte par laquelle deux logiciels se parlent. Exemple : Djeli parle à Claude par son API."],
+    ["Webhook", "Un message automatique qu'un service envoie à Djeli quand quelque chose se passe : « paiement réussi », « message livré »."],
+    ["Idempotence", "Pouvoir recevoir la même chose plusieurs fois sans effet double. Indispensable pour l'argent."],
+    ["Prompt", "Les instructions écrites qu'on donne à Claude. Elles sont dans src/lib/ia/prompts/."],
+    ["Tâche de fond", "Un travail qui tourne sans que personne ne regarde : analyses, envois, relances. Ici, Trigger.dev."],
+    ["Variable d'environnement", "Une valeur secrète (clé, mot de passe) rangée dans .env.local, jamais dans le code."],
+    ["Server Action", "Une fonction du backend appelée quand le client clique sur un bouton."],
+    ["Branche", "Une copie du code où Harness travaille sans toucher à la version principale (main)."],
+    ["Opt-out", "Une désinscription. La liste des opt-outs est commune à tous les clients de Djeli."],
+    ["Test", "Un petit programme qui vérifie automatiquement qu'une règle est respectée. Sans test, pas de module terminé."]
+  ];
+
+  /* ===== Rendu ===== */
+  var svgNS = "http://www.w3.org/2000/svg";
+  var $ = function (id) { return document.getElementById(id); };
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var state = { s: 0, b: 0, playing: !reduce, elapsed: 0, last: 0 };
+  var current = { nodes: {}, edges: {}, packets: [] };
+
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(svgNS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function nodeH(n) { return 48 + (n.label.split("\n").length - 1) * 17; }
+  function clip(n, tx, ty) {
+    var dx = tx - n.x, dy = ty - n.y;
+    var hw = n.w / 2 + 6, hh = nodeH(n) / 2 + 6;
+    var t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity);
+    return [n.x + dx * t, n.y + dy * t];
+  }
+  function geom(scene, e) {
+    var a = scene.byId[e.from], b = scene.byId[e.to];
+    if (!e.curve) {
+      var p0 = clip(a, b.x, b.y), p1 = clip(b, a.x, a.y);
+      return { d: "M" + p0[0] + "," + p0[1] + " L" + p1[0] + "," + p1[1], at: function (t) { return [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t]; } };
+    }
+    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    var len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    var cx = mx + (-(b.y - a.y) / len) * e.curve, cy = my + ((b.x - a.x) / len) * e.curve;
+    var q0 = clip(a, cx, cy), q1 = clip(b, cx, cy);
+    return { d: "M" + q0[0] + "," + q0[1] + " Q" + cx + "," + cy + " " + q1[0] + "," + q1[1], at: function (t) { var u = 1 - t; return [u * u * q0[0] + 2 * u * t * cx + t * t * q1[0], u * u * q0[1] + 2 * u * t * cy + t * t * q1[1]]; } };
+  }
+
+  function renderScene() {
+    var scene = SCENES[state.s];
+    scene.byId = {};
+    scene.nodes.forEach(function (n) { scene.byId[n.id] = n; });
+    var gE = $("layer-edges"), gL = $("layer-labels"), gN = $("layer-nodes");
+    gE.textContent = ""; gL.textContent = ""; gN.textContent = ""; $("layer-packets").textContent = "";
+    current = { nodes: {}, edges: {}, labels: {}, geoms: {}, packets: [] };
+
+    scene.edges.forEach(function (e) {
+      var g = geom(scene, e);
+      current.geoms[e.id] = g;
+      current.edges[e.id] = el("path", { d: g.d, "class": "edge", "marker-end": "url(#arrow)" }, gE);
+      if (e.label) {
+        var m = g.at(0.5);
+        var t = el("text", { x: m[0], y: m[1] - 7, "text-anchor": "middle", "class": "elabel" }, gL);
+        t.textContent = e.label;
+        current.labels[e.id] = t;
+      }
+    });
+    scene.nodes.forEach(function (n) {
+      var h = nodeH(n), lines = n.label.split("\n");
+      var g = el("g", { "class": "node k-" + n.kind, transform: "translate(" + (n.x - n.w / 2) + "," + (n.y - h / 2) + ")" }, gN);
+      el("rect", { width: n.w, height: h, rx: n.kind === "acteur" ? h / 2 > 28 ? 28 : h / 2 : 10 }, g);
+      var k = el("text", { x: n.w / 2, y: 17, "text-anchor": "middle", "class": "kind" }, g);
+      k.textContent = KIND[n.kind];
+      lines.forEach(function (line, i) {
+        var t = el("text", { x: n.w / 2, y: 36 + i * 17, "text-anchor": "middle", "class": "lbl" }, g);
+        t.textContent = line;
+      });
+      current.nodes[n.id] = g;
+    });
+
+    $("scene-num").textContent = scene.situation ? "Si…" : "Scène " + (state.s + 1) + "/" + 10;
+    $("scene-title").textContent = scene.title;
+    $("scene-mods").innerHTML = scene.mods.map(function (m) { return '<span class="tag">module ' + m + "</span>"; }).join("");
+    renderDots();
+    renderPilot(scene);
+    document.querySelectorAll(".chap").forEach(function (b) { b.setAttribute("aria-current", String(Number(b.dataset.i) === state.s)); });
+  }
+
+  function applyBeat() {
+    var scene = SCENES[state.s], beat = scene.beats[state.b];
+    var on = {}, flow = {};
+    beat.on.forEach(function (id) { on[id] = true; });
+    beat.flow.forEach(function (id) { flow[id] = true; var e = id.split(">"); on[e[0]] = true; on[e[1]] = true; });
+    var all = beat.on.length === 0 && beat.flow.length === 0;
+    Object.keys(current.nodes).forEach(function (id) {
+      var g = current.nodes[id];
+      g.classList.toggle("on", !all && !!on[id]);
+      g.classList.toggle("dim", !all && !on[id]);
+    });
+    Object.keys(current.edges).forEach(function (id) {
+      var p = current.edges[id], f = !!flow[id];
+      p.classList.toggle("on", f);
+      p.classList.toggle("dim", !all && !f);
+      p.setAttribute("marker-end", f ? "url(#arrowOn)" : "url(#arrow)");
+      var l = current.labels[id];
+      if (l) { l.classList.toggle("on", f); l.classList.toggle("dim", !all && !f); }
+    });
+    var gP = $("layer-packets");
+    gP.textContent = "";
+    current.packets = beat.flow.map(function (id, i) {
+      return { g: current.geoms[id], c: el("circle", { r: 6, "class": "packet" }, gP), off: i * 0.18 };
+    });
+    if (reduce) current.packets.forEach(function (p) { var pt = p.g.at(0.7); p.c.setAttribute("cx", pt[0]); p.c.setAttribute("cy", pt[1]); });
+    $("step").textContent = "Étape " + (state.b + 1) + " sur " + scene.beats.length;
+    $("caption").textContent = beat.t;
+    state.elapsed = 0;
+    updateDots();
+  }
+
+  function beatDuration() {
+    var words = SCENES[state.s].beats[state.b].t.split(/\s+/).length;
+    return Math.max(4200, Math.min(10000, words * 330));
+  }
+
+  function renderDots() {
+    var d = $("dots");
+    d.textContent = "";
+    SCENES[state.s].beats.forEach(function (_, i) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "dot"; b.setAttribute("aria-label", "Aller à l'étape " + (i + 1));
+      b.innerHTML = '<span class="fill"></span>';
+      b.addEventListener("click", function () { go(state.s, i); });
+      d.appendChild(b);
+    });
+  }
+  function updateDots() {
+    var dots = $("dots").children;
+    for (var i = 0; i < dots.length; i++) {
+      dots[i].classList.toggle("done", i < state.b);
+      dots[i].firstChild.style.width = i < state.b ? "100%" : "0";
+    }
+  }
+
+  function renderPilot(scene) {
+    var p = scene.pilot, html = "<h3>Pour diriger Harness</h3>";
+    html += "<div><h4>Ce que tu peux décider</h4><ul>" + p.leviers.map(function (l) { return "<li><span>" + esc(l[0]) + "</span><code>" + esc(l[1]) + "</code></li>"; }).join("") + "</ul></div>";
+    if (p.warn) html += '<p class="warn">' + esc(p.warn) + "</p>";
+    html += '<div><h4>Exemple de demande à Harness</h4><div class="prompt"><pre>' + esc(p.prompt) + '</pre><button class="btn copy" type="button">Copier</button></div></div>';
+    $("pilot").innerHTML = html;
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function go(s, b) {
+    var changed = s !== state.s;
+    state.s = s; state.b = b;
+    if (changed || !current.nodes || !Object.keys(current.nodes).length) renderScene();
+    applyBeat();
+  }
+  function next() {
+    var sc = SCENES[state.s];
+    if (state.b < sc.beats.length - 1) go(state.s, state.b + 1);
+    else if (state.s < SCENES.length - 1) go(state.s + 1, 0);
+    else setPlaying(false);
+  }
+  function prev() {
+    if (state.b > 0) go(state.s, state.b - 1);
+    else if (state.s > 0) go(state.s - 1, SCENES[state.s - 1].beats.length - 1);
+  }
+  function setPlaying(v) {
+    state.playing = v;
+    $("play").textContent = v ? "❚❚ Pause" : "▶ Lecture";
+    state.last = performance.now();
+  }
+
+  function tick(now) {
+    var dt = now - (state.last || now);
+    state.last = now;
+    if (!reduce) {
+      current.packets.forEach(function (p) {
+        var t = ((now / 1500) + p.off) % 1;
+        var pt = p.g.at(t);
+        p.c.setAttribute("cx", pt[0]); p.c.setAttribute("cy", pt[1]);
+      });
+    }
+    if (state.playing) {
+      state.elapsed += dt;
+      var dur = beatDuration();
+      var dot = $("dots").children[state.b];
+      if (dot) dot.firstChild.style.width = Math.min(100, state.elapsed / dur * 100) + "%";
+      if (state.elapsed >= dur) next();
+    }
+    requestAnimationFrame(tick);
+  }
+
+  /* Chapitres */
+  var chaps = $("chapters");
+  function addHeading(t) { var h = document.createElement("h3"); h.textContent = t; chaps.appendChild(h); }
+  addHeading("Le film");
+  SCENES.forEach(function (sc, i) {
+    if (i === 10) addHeading("Que se passe-t-il si…");
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "chap"; b.dataset.i = i;
+    b.innerHTML = '<span class="n">' + (sc.situation ? "?" : String(i + 1).padStart(2, "0")) + "</span><span>" + esc(sc.title) + "</span>";
+    b.addEventListener("click", function () { go(i, 0); });
+    chaps.appendChild(b);
+  });
+
+  /* Sections du bas */
+  $("templates").innerHTML = TEMPLATES.map(function (t) {
+    return '<article class="card"><h3>' + esc(t.t) + '</h3><p class="when">' + esc(t.w) + '</p><div class="prompt"><pre>' + esc(t.p) + '</pre><button class="btn copy" type="button">Copier</button></div></article>';
+  }).join("");
+  $("where").innerHTML = WHERE.map(function (r) { return "<tr><td>" + esc(r[0]) + "</td><td><code>" + esc(r[1]) + '</code></td><td class="mod">' + esc(r[2]) + "</td></tr>"; }).join("");
+  $("gloss").innerHTML = GLOSS.map(function (g) { return "<div><dt>" + esc(g[0]) + "</dt><dd>" + esc(g[1]) + "</dd></div>"; }).join("");
+
+  /* Copier */
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest ? ev.target.closest(".copy") : null;
+    if (!btn) return;
+    var pre = btn.parentNode.querySelector("pre");
+    var text = pre.textContent;
+    var done = function () { btn.textContent = "Copié"; setTimeout(function () { btn.textContent = "Copier"; }, 1600); };
+    var fallback = function () { var r = document.createRange(); r.selectNodeContents(pre); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Sélectionné : Ctrl+C"; };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  $("prev").addEventListener("click", function () { prev(); });
+  $("next").addEventListener("click", function () { next(); });
+  $("play").addEventListener("click", function () { setPlaying(!state.playing); });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.target && /INPUT|TEXTAREA/.test(ev.target.tagName)) return;
+    if (ev.key === "ArrowRight") { next(); }
+    else if (ev.key === "ArrowLeft") { prev(); }
+  });
+
+  renderScene();
+  applyBeat();
+  setPlaying(!reduce);
+  requestAnimationFrame(tick);
+})();
+</script>

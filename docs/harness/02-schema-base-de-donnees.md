@@ -37,12 +37,8 @@ Module 01 terminé.
 - `profils_cibles` : `entreprise_id`, `nom`, `type_cible`, `secteurs text[]`, `tailles text[]`, `pays text[]`, `villes text[]`, `signaux_achat text[]`, `angle` (l'argument principal), `actif` bool
 - `campagnes` : `entreprise_id`, `profil_cible_id`, `nom`, `statut`, `canaux_autorises canal[]`, `mode_repartition`, `repartition` jsonb (ex. `{"email":40,"whatsapp":60}` en %), `plafond_credits_jour` integer, `sequence` jsonb (étapes : jour, canal, objectif), `demarree_le`, `terminee_le`
 
-## Migration 4 : annuaire (partagé, lu par le service uniquement)
-- `annuaire_entreprises` : `nom`, `nom_normalise`, `categorie`, `sous_categorie`, `pays`, `ville`, `adresse`, `position geography(Point,4326)`, `site_web`, `email_generique`, `telephone`, `whatsapp`, `reseaux` jsonb, `taille_estimee`, `sources text[]`, `ids_sources` jsonb (ex. `{"overture":"…","foursquare":"…","google_place_id":"…"}`), `score_qualite` smallint, `verifie_le`
-- `annuaire_contacts` : `annuaire_entreprise_id`, `nom`, `poste`, `email`, `telephone`, `source`, `base_legale` (d'où vient la donnée et pourquoi on peut l'utiliser)
-- `annuaire_particuliers_importes` : contacts de particuliers importés **par un client** (CSV), rattachés à `entreprise_id`, jamais partagés avec un autre client
-- Index : GIST sur `position`, GIN trigram sur `nom_normalise`, btree sur (`pays`, `categorie`)
-- **Aucune donnée Google Maps stockée** à part `google_place_id`
+## Migration 4 : annuaire
+**Ne pas la faire ici.** Tout l'annuaire (entreprises, lieux, contacts, sources, particuliers, imports des clients) est créé par le module **07A**. Les tables de ce module qui font référence à l'annuaire (`prospects.annuaire_entreprise_id`, `prospects.annuaire_contact_id`) reçoivent leur clé étrangère dans une migration du module 07A.
 
 ## Migration 5 : prospects et messages (par client)
 - `prospects` : `entreprise_id`, `campagne_id`, `annuaire_entreprise_id` (nullable), `annuaire_contact_id` (nullable), `type_cible`, `nom_entreprise`, `nom_contact`, `poste`, `email`, `telephone`, `whatsapp`, `pays`, `langue`, `score_adequation` smallint (0–100), `analyse` jsonb (module 08), `canal_prefere` canal, `statut`, `source`, `base_legale`. Unique (`campagne_id`, `annuaire_entreprise_id`)
@@ -67,16 +63,16 @@ Module 01 terminé.
 
 ## Migration 8 : RLS
 - Activer la RLS sur **toutes** les tables
-- Tables d'un client (`entreprises`, `membres`, `profils_cibles`, `campagnes`, `prospects`, `messages`, `conversations`, `rendez_vous`, `integrations`, `soldes_credits`, `transactions_credits`, `depenses_jour`, `paiements`, `annuaire_particuliers_importes`) : `select` si `est_membre(entreprise_id)`
+- Tables d'un client (`entreprises`, `membres`, `profils_cibles`, `campagnes`, `prospects`, `messages`, `conversations`, `rendez_vous`, `integrations`, `soldes_credits`, `transactions_credits`, `depenses_jour`, `paiements`) : `select` si `est_membre(entreprise_id)`
 - Écriture par le client seulement sur : `entreprises` (ses champs de profil), `profils_cibles`, `campagnes`, `rendez_vous`
 - **Aucune écriture client** sur `soldes_credits`, `transactions_credits`, `depenses_jour`, `paiements`, `messages`, `integrations`
 - `profils` : chacun lit et modifie le sien
-- `annuaire_entreprises`, `annuaire_contacts`, `opt_outs`, `boites_envoi`, `numeros_djeli`, `contacts_recents`, `journal_evenements` : **aucun accès** pour `anon` et `authenticated`
+- `opt_outs`, `boites_envoi`, `numeros_djeli`, `contacts_recents`, `journal_evenements` : **aucun accès** pour `anon` et `authenticated`
 
 ## Tests (pgTAP dans `supabase/tests/` ou Vitest sur la base locale)
 - L'utilisateur A ne voit pas les prospects de l'entreprise B
 - Un utilisateur connecté ne peut pas écrire dans `transactions_credits`
-- Un utilisateur connecté ne peut pas lire `opt_outs` ni `annuaire_entreprises`
+- Un utilisateur connecté ne peut pas lire `opt_outs` ni `boites_envoi`
 - `solde` ne peut pas devenir négatif
 
 ## Critères d'acceptation

@@ -10,7 +10,7 @@
 Tout ceci est **gratuit** (aucun crédit).
 
 ## Prérequis
-Modules 01 à 04 terminés. Le module 07 (annuaire) peut ne pas être fini : l'aperçu utilise alors une fonction de comptage temporaire qui renvoie 0, à remplacer au module 07.
+Modules 01 à 04 terminés. L’annuaire (modules 07A à 07H) peut ne pas être fini : l’aperçu utilise alors une fonction de comptage temporaire qui renvoie 0, remplacée par `compter_annuaire` (module 07A).
 
 ## À faire
 
