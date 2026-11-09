@@ -1,0 +1,51 @@
+# ═════════════════════════════════════════════════════════════════════════
+# Djeli — variables d'environnement
+# ═════════════════════════════════════════════════════════════════════════
+#
+# Ce fichier est le modèle à placer à la racine du projet sous le nom
+# ".env.example" (nom exact, avec le point initial).
+#
+# Puis copie-le en ".env.local" et renseigne les valeurs.
+# NE JAMAIS commiter .env.local : il est déjà dans .gitignore.
+#
+# Les variables sans valeur ici sont facultatives pour l'instant ; chaque
+# module backend rendra obligatoire celles qu'il utilise.
+
+# ───── Supabase ───────────────────────────────────────────────────────────
+# Projet Supabase local : lance `npx supabase start` pour voir ces valeurs
+# dans le terminal. Projet en ligne : page "Settings → API" du projet.
+
+# URL de l'API Supabase (publique). Par défaut en local : http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_URL=
+
+# Clé "anon" de Supabase (publique). Elle respecte la RLS.
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
+# Clé "service_role" de Supabase. SECRÈTE : contourne la RLS.
+# À utiliser UNIQUEMENT côté serveur (tâches de fond, webhooks).
+SUPABASE_SERVICE_ROLE_KEY=
+
+# ───── Application ────────────────────────────────────────────────────────
+
+# URL publique de l'application, sans barre finale. En local : http://localhost:3000
+APP_URL=http://localhost:3000
+
+# ───── IA (ajouté au module 06) ───────────────────────────────────────────
+
+# Clé API Claude. À créer sur https://console.anthropic.com
+ANTHROPIC_API_KEY=
+
+# ───── Emails transactionnels (ajouté à la mise en ligne) ─────────────────
+
+# Clé API Resend. À créer sur https://resend.com
+RESEND_API_KEY=
+
+# ───── Transcription audio (ajouté au module 12) ──────────────────────────
+
+# Clé API Groq pour Whisper. À créer sur https://console.groq.com
+GROQ_API_KEY=
+
+# ───── Tâches de fond (ajouté au module 06/11) ────────────────────────────
+
+# Clé secrète du projet Trigger.dev. À créer sur https://trigger.dev
+TRIGGER_SECRET_KEY=
