@@ -322,6 +322,26 @@ export type LigneJournalEvenement = Simplify<Base & {
   donnees: Json | null;
 }>;
 
+/** Analyse faite avant l'inscription, rattachée au compte à sa création. */
+export type LigneAnalyseAnonyme = Simplify<Base & {
+  jeton: string;
+  entree: string;
+  type_entree: string;
+  pays: string | null;
+  resultat: Json | null;
+  etat: string;
+  rattachee_a: string | null;
+  rattachee_le: string | null;
+  ip_hash: string | null;
+  expire_le: string;
+}>;
+
+/** Compteur de la limite de fréquence (connexion, inscription, analyse). */
+export type LigneTentative = Simplify<Base & {
+  cle: string;
+  action: string;
+}>;
+
 // ───── Schéma ────────────────────────────────────────────────────────────
 
 export type Database = {
@@ -375,6 +395,8 @@ export type Database = {
       contacts_recents: Table<LigneContactRecent, "valeur">;
       jours_feries: Table<LigneJourFerie, "pays" | "jour" | "nom">;
       journal_evenements: Table<LigneJournalEvenement, "type">;
+      analyses_anonymes: Table<LigneAnalyseAnonyme, "jeton" | "entree">;
+      tentatives: Table<LigneTentative, "cle" | "action">;
     };
     Views: {
       [_ in never]: never;
@@ -387,6 +409,29 @@ export type Database = {
       est_admin: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      /** Crée entreprise + membre + solde, et rattache l'analyse anonyme. */
+      creer_entreprise_pour_utilisateur: {
+        Args: {
+          nom: string;
+          pays: string | null;
+          jeton_analyse: string | null;
+        };
+        Returns: string;
+      };
+      /** true si l'action est autorisée (limite non atteinte). */
+      verifier_limite: {
+        Args: {
+          cle: string;
+          action: string;
+          maximum: number;
+          fenetre: string;
+        };
+        Returns: boolean;
+      };
+      reinitialiser_limite: {
+        Args: { cle: string; action: string };
+        Returns: undefined;
       };
       crediter: {
         Args: {

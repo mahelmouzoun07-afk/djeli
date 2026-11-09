@@ -30,6 +30,12 @@ const schemaServeur = z.object({
     .url("APP_URL doit être une URL complète, par exemple http://localhost:3000")
     .optional(),
 
+  // Sel du hachage des IP (limite de fréquence, module 04)
+  SEL_EMPREINTE_IP: z.string().min(8).optional(),
+
+  // Niveau de journalisation : debug, info, warn, error
+  NIVEAU_JOURNAL: z.enum(["debug", "info", "warn", "error"]).optional(),
+
   // Environnement d'exécution
   NODE_ENV: z
     .enum(["development", "test", "production"])

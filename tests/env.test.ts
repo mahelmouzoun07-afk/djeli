@@ -1,15 +1,20 @@
-import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 
 /**
  * Vérifie que l'absence d'une variable d'environnement donne un message
  * d'erreur clair en français (critère d'acceptation du module 01).
+ *
+ * `env.ts` et `env-public.ts` mettent leur résultat en cache : il faut
+ * réinitialiser le registre des modules à chaque test, sinon le cache d'un
+ * autre fichier de test fausse le résultat.
  */
 describe("Variables d'environnement : messages d'erreur en français", () => {
   let avant: NodeJS.ProcessEnv;
 
   beforeEach(() => {
+    vi.resetModules();
     avant = { ...process.env };
-    // On vide complètement les clés pour recréer l'état "sans .env.local"
+    // Recrée l'état « pas de .env.local »
     delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -18,21 +23,19 @@ describe("Variables d'environnement : messages d'erreur en français", () => {
 
   afterEach(() => {
     process.env = avant;
+    vi.resetModules();
   });
 
   it("exigerEnvPublic renvoie un message en français quand la variable manque", async () => {
-    // Import dynamique car env-public.ts met le résultat en cache
-    const mod = await import(
-      "@/lib/env-public?t=" + Date.now()
-    );
-    expect(() => mod.exigerEnvPublic("NEXT_PUBLIC_SUPABASE_URL")).toThrow(
+    const { exigerEnvPublic } = await import("@/lib/env-public");
+    expect(() => exigerEnvPublic("NEXT_PUBLIC_SUPABASE_URL")).toThrow(
       /requise.*\.env\.local/i,
     );
   });
 
   it("exigerEnv renvoie un message en français quand la variable manque", async () => {
-    const mod = await import("@/lib/env?t=" + Date.now());
-    expect(() => mod.exigerEnv("SUPABASE_SERVICE_ROLE_KEY")).toThrow(
+    const { exigerEnv } = await import("@/lib/env");
+    expect(() => exigerEnv("SUPABASE_SERVICE_ROLE_KEY")).toThrow(
       /requise.*\.env\.local/i,
     );
   });
