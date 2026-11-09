@@ -21,7 +21,8 @@ create table public.prospects (
   pays char(2),
   langue text,
   score_adequation smallint,
-  analyse jsonb,                   -- rempli au module 08
+  -- `analyse` seul est un MOT RÉSERVÉ Postgres (variante de ANALYZE).
+  analyse_ia jsonb,                -- rempli au module 08
   canal_prefere public.canal,
   statut public.statut_prospect not null default 'nouveau',
   source text,

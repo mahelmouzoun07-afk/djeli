@@ -50,7 +50,9 @@ create table public.entreprises (
   pays char(2),                      -- code ISO 3166-1 alpha-2
   ville text,
   secteur text,
-  analyse jsonb,                     -- rempli au module 06
+  -- `analyse` seul est un MOT RÉSERVÉ Postgres (variante de ANALYZE) :
+  -- toujours nommer cette colonne `analyse_ia`.
+  analyse_ia jsonb,                  -- rempli au module 06
   analyse_le timestamptz,
   style_valide boolean not null default false,
   nom_signature text,                -- ex. "Koffi, du Studio Koffi"

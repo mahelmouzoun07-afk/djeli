@@ -111,7 +111,7 @@ export type LigneEntreprise = Simplify<Base & {
   pays: string | null;
   ville: string | null;
   secteur: string | null;
-  analyse: Json | null;
+  analyse_ia: Json | null;
   analyse_le: string | null;
   style_valide: boolean;
   nom_signature: string | null;
@@ -168,7 +168,7 @@ export type LigneProspect = Simplify<Base & {
   pays: string | null;
   langue: string | null;
   score_adequation: number | null;
-  analyse: Json | null;
+  analyse_ia: Json | null;
   canal_prefere: Canal | null;
   statut: StatutProspect;
   source: string | null;
@@ -252,6 +252,19 @@ export type LigneSoldeCredits = Simplify<Base & {
   reference_alerte: number | null;
   alerte_20_envoyee: boolean;
   alerte_5_envoyee: boolean;
+}>;
+
+/**
+ * Un lot = un achat de crédits avec sa date d'expiration.
+ * Les débits consomment les lots du plus proche de l'expiration au plus
+ * lointain (FIFO). La somme des `restant` doit toujours égaler le solde.
+ */
+export type LigneLotCredits = Simplify<Base & {
+  entreprise_id: string;
+  transaction_id: string | null;
+  montant_initial: number;
+  restant: number;
+  expire_le: string | null;
 }>;
 
 export type LigneTransactionCredits = Simplify<Base & {
@@ -342,6 +355,10 @@ export type Database = {
         "entreprise_id" | "type" | "jeton_ref"
       >;
       soldes_credits: Table<LigneSoldeCredits, "entreprise_id">;
+      lots_credits: Table<
+        LigneLotCredits,
+        "entreprise_id" | "montant_initial" | "restant"
+      >;
       transactions_credits: Table<
         LigneTransactionCredits,
         "entreprise_id" | "type" | "montant" | "solde_apres"
@@ -398,6 +415,11 @@ export type Database = {
       rembourser: {
         Args: { cle_debit: string; motif: string };
         Returns: number;
+      };
+      /** Interne : appelée par debiter(), jamais directement. */
+      consommer_lots: {
+        Args: { entreprise: string; montant: number };
+        Returns: undefined;
       };
       expirer_credits: {
         Args: Record<string, never>;

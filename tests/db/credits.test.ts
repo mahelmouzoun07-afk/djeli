@@ -55,6 +55,7 @@ describeSiDb("Moteur de crédits (SQL)", () => {
   beforeEach(async () => {
     if (!config) return;
     // Remise à zéro entre les tests
+    await admin.from("lots_credits").delete().eq("entreprise_id", entrepriseId);
     await admin.from("transactions_credits").delete().eq("entreprise_id", entrepriseId);
     await admin.from("depenses_jour").delete().eq("entreprise_id", entrepriseId);
     await admin
@@ -257,6 +258,97 @@ describeSiDb("Moteur de crédits (SQL)", () => {
       .eq("type", "expiration");
     expect(txs).toHaveLength(1);
     expect((txs![0] as { montant: number }).montant).toBe(-50);
+  });
+
+  it("FIFO : le lot qui expire le plus tôt est consommé en premier", async () => {
+    const dansUnAn = new Date();
+    dansUnAn.setMonth(dansUnAn.getMonth() + 12);
+    const dansUnMois = new Date();
+    dansUnMois.setMonth(dansUnMois.getMonth() + 1);
+
+    await admin.rpc("crediter", {
+      entreprise: entrepriseId,
+      montant: 100,
+      type_tx: "achat",
+      motif: "expire dans 1 an",
+      reference: null,
+      cle: "fifo:loin",
+      expire_le: dansUnAn.toISOString(),
+    });
+    await admin.rpc("crediter", {
+      entreprise: entrepriseId,
+      montant: 50,
+      type_tx: "achat",
+      motif: "expire dans 1 mois",
+      reference: null,
+      cle: "fifo:proche",
+      expire_le: dansUnMois.toISOString(),
+    });
+
+    // 30 crédits doivent sortir du lot qui expire le plus tôt
+    await admin.rpc("debiter", {
+      entreprise: entrepriseId,
+      montant: 30,
+      motif: "envoi",
+      reference: null,
+      cle: "fifo:debit",
+      campagne: null,
+      canal_debit: null,
+    });
+
+    const { data: lots } = await admin
+      .from("lots_credits")
+      .select("montant_initial, restant, expire_le")
+      .eq("entreprise_id", entrepriseId)
+      .order("expire_le", { ascending: true });
+
+    type Lot = { montant_initial: number; restant: number };
+    const liste = (lots ?? []) as Lot[];
+    const proche = liste.find((l) => l.montant_initial === 50);
+    const loin = liste.find((l) => l.montant_initial === 100);
+
+    expect(proche?.restant).toBe(20); // 50 - 30
+    expect(loin?.restant).toBe(100); // intact
+  });
+
+  it("la somme des lots est toujours égale au solde", async () => {
+    await admin.rpc("crediter", {
+      entreprise: entrepriseId,
+      montant: 200,
+      type_tx: "achat",
+      motif: "coherence",
+      reference: null,
+      cle: "coh:achat",
+      expire_le: null,
+    });
+    await admin.rpc("debiter", {
+      entreprise: entrepriseId,
+      montant: 42,
+      motif: "envoi",
+      reference: null,
+      cle: "coh:debit",
+      campagne: null,
+      canal_debit: null,
+    });
+    await admin.rpc("rembourser", { cle_debit: "coh:debit", motif: "non livré" });
+
+    const { data: solde } = await admin
+      .from("soldes_credits")
+      .select("solde")
+      .eq("entreprise_id", entrepriseId)
+      .single<{ solde: number }>();
+
+    const { data: lots } = await admin
+      .from("lots_credits")
+      .select("restant")
+      .eq("entreprise_id", entrepriseId);
+
+    const somme = ((lots ?? []) as { restant: number }[]).reduce(
+      (t, l) => t + l.restant,
+      0,
+    );
+    expect(somme).toBe(solde!.solde);
+    expect(solde!.solde).toBe(200);
   });
 
   it("le solde ne peut jamais devenir négatif", async () => {

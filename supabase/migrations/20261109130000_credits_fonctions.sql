@@ -1,13 +1,54 @@
 -- Module 03 : moteur de crédits.
+--
+-- Principe : chaque achat crée un LOT de crédits avec sa date d'expiration.
+-- Les débits consomment les lots du plus proche de l'expiration au plus
+-- lointain (FIFO), comme l'exige le modèle économique. L'expiration ne
+-- retire que ce qui reste réellement dans les lots échus.
+--
 -- Toutes les fonctions sont :
---   - security definer (contournent la RLS pour que seul le service y touche)
---   - search_path fixé à `public, pg_temp` (évite les attaques par shadowing)
---   - revoked for public/anon/authenticated, granted to service_role seulement
+--   - security definer (seul le service y touche)
+--   - search_path fixé à `public, pg_temp`
+--   - exécution révoquée sauf pour service_role
 
 -- ═════════════════════════════════════════════════════════════════════════
--- crediter : ajoute `montant` crédits au solde d'une entreprise.
--- Idempotent : si `cle` existe déjà dans transactions_credits, aucune
--- écriture et renvoi du solde courant.
+-- Table des lots
+-- ═════════════════════════════════════════════════════════════════════════
+
+create table public.lots_credits (
+  id uuid primary key default gen_random_uuid(),
+  entreprise_id uuid not null references public.entreprises(id) on delete cascade,
+  transaction_id uuid references public.transactions_credits(id) on delete set null,
+  montant_initial integer not null,
+  restant integer not null,
+  expire_le timestamptz,              -- null = n'expire jamais
+  cree_le timestamptz not null default now(),
+  modifie_le timestamptz not null default now(),
+  constraint lot_montant_positif check (montant_initial > 0),
+  constraint lot_restant_borne check (restant >= 0 and restant <= montant_initial)
+);
+
+create trigger lots_credits_maj_modifie_le
+before update on public.lots_credits
+for each row execute function public.maj_modifie_le();
+
+-- Index de consommation FIFO : les lots qui expirent le plus tôt d'abord,
+-- `nulls last` pour que les lots sans expiration soient consommés en dernier.
+create index lots_credits_fifo_idx
+  on public.lots_credits (entreprise_id, expire_le nulls last, cree_le)
+  where restant > 0;
+
+create index lots_credits_expiration_idx
+  on public.lots_credits (expire_le)
+  where restant > 0 and expire_le is not null;
+
+alter table public.lots_credits enable row level security;
+
+create policy lots_credits_lire on public.lots_credits
+  for select using (public.est_membre(entreprise_id));
+
+-- ═════════════════════════════════════════════════════════════════════════
+-- crediter : ajoute des crédits et ouvre un lot.
+-- Idempotent par `cle`.
 -- ═════════════════════════════════════════════════════════════════════════
 
 create or replace function public.crediter(
@@ -27,12 +68,12 @@ as $$
 declare
   nouveau_solde integer;
   tx_existante public.transactions_credits%rowtype;
+  tx_id uuid;
 begin
   if montant <= 0 then
     raise exception 'montant_doit_etre_positif';
   end if;
 
-  -- Idempotence
   if cle is not null then
     select * into tx_existante
     from public.transactions_credits
@@ -43,7 +84,6 @@ begin
     end if;
   end if;
 
-  -- Verrouille la ligne solde (la crée si absente)
   insert into public.soldes_credits (entreprise_id, solde)
   values (entreprise, 0)
   on conflict (entreprise_id) do nothing;
@@ -53,7 +93,7 @@ begin
   where entreprise_id = entreprise
   returning solde into nouveau_solde;
 
-  -- Si c'est un achat, le solde servira de référence pour les alertes 20 % / 5 %
+  -- Un achat ou un bonus fixe la nouvelle référence des alertes 20 % / 5 %
   if type_tx in ('achat', 'bonus') then
     update public.soldes_credits
     set reference_alerte = nouveau_solde,
@@ -65,16 +105,63 @@ begin
   insert into public.transactions_credits
     (entreprise_id, type, montant, solde_apres, motif, reference, cle_idempotence, expire_le)
   values
-    (entreprise, type_tx, montant, nouveau_solde, motif, reference, cle, expire_le);
+    (entreprise, type_tx, montant, nouveau_solde, motif, reference, cle, expire_le)
+  returning id into tx_id;
+
+  -- Tout ajout de crédits ouvre un lot consommable
+  insert into public.lots_credits
+    (entreprise_id, transaction_id, montant_initial, restant, expire_le)
+  values
+    (entreprise, tx_id, montant, montant, expire_le);
 
   return nouveau_solde;
 end;
 $$;
 
 -- ═════════════════════════════════════════════════════════════════════════
--- debiter : retire `montant` crédits. Vérifie solde ET plafond du jour.
--- Idempotent : rejoue renvoie le même résultat.
--- Verrouille la ligne solde (SELECT ... FOR UPDATE).
+-- consommer_lots : retire `montant` des lots, du plus proche de l'expiration
+-- au plus lointain. Fonction interne, appelée par debiter().
+-- ═════════════════════════════════════════════════════════════════════════
+
+create or replace function public.consommer_lots(
+  entreprise uuid,
+  montant integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  reste integer := montant;
+  lot record;
+  pris integer;
+begin
+  for lot in
+    select id, restant
+    from public.lots_credits
+    where entreprise_id = entreprise and restant > 0
+    order by expire_le nulls last, cree_le
+    for update
+  loop
+    exit when reste <= 0;
+    pris := least(lot.restant, reste);
+    update public.lots_credits
+    set restant = restant - pris
+    where id = lot.id;
+    reste := reste - pris;
+  end loop;
+
+  -- `reste > 0` signifierait que le solde et les lots ont divergé.
+  if reste > 0 then
+    raise exception 'lots_insuffisants: il manque % crédits en lots', reste;
+  end if;
+end;
+$$;
+
+-- ═════════════════════════════════════════════════════════════════════════
+-- debiter : retire des crédits. Vérifie le solde ET le plafond du jour.
+-- Idempotent par `cle`. Verrouille la ligne du solde.
 -- ═════════════════════════════════════════════════════════════════════════
 
 create type public.resultat_debit as (
@@ -108,47 +195,38 @@ declare
   nouveau_solde integer;
 begin
   if montant <= 0 then
-    resultat.ok := false;
-    resultat.solde := 0;
-    resultat.raison := 'montant_doit_etre_positif';
+    resultat := (false, 0, 'montant_doit_etre_positif');
     return resultat;
   end if;
 
-  -- Idempotence : si la clé existe, on renvoie le même résultat qu'avant.
   if cle is not null then
     select * into tx_existante
     from public.transactions_credits
     where cle_idempotence = cle;
 
     if found then
-      resultat.ok := true;
-      resultat.solde := tx_existante.solde_apres;
-      resultat.raison := 'deja_debite';
+      resultat := (true, tx_existante.solde_apres, 'deja_debite');
       return resultat;
     end if;
   end if;
 
-  -- Verrouille le solde pour exclure les débits concurrents
+  -- Verrou : exclut les débits concurrents sur la même entreprise
   select solde into solde_actuel
   from public.soldes_credits
   where entreprise_id = entreprise
   for update;
 
   if not found then
-    resultat.ok := false;
-    resultat.solde := 0;
-    resultat.raison := 'solde_insuffisant';
+    resultat := (false, 0, 'solde_insuffisant');
     return resultat;
   end if;
 
   if solde_actuel < montant then
-    resultat.ok := false;
-    resultat.solde := solde_actuel;
-    resultat.raison := 'solde_insuffisant';
+    resultat := (false, solde_actuel, 'solde_insuffisant');
     return resultat;
   end if;
 
-  -- Vérifie le plafond du jour pour la campagne (si fourni)
+  -- Plafond du jour de la campagne, dans le fuseau horaire du client
   if campagne is not null then
     select c.plafond_credits_jour, e.fuseau_horaire
     into plafond, fuseau
@@ -156,24 +234,24 @@ begin
     join public.entreprises e on e.id = c.entreprise_id
     where c.id = campagne;
 
-    if plafond is not null then
-      jour_local := (now() at time zone coalesce(fuseau, 'UTC'))::date;
+    jour_local := (now() at time zone coalesce(fuseau, 'UTC'))::date;
 
+    if plafond is not null then
       select coalesce(sum(credits), 0)
       into depense_actuelle
       from public.depenses_jour
       where campagne_id = campagne and jour = jour_local;
 
       if depense_actuelle + montant > plafond then
-        resultat.ok := false;
-        resultat.solde := solde_actuel;
-        resultat.raison := 'plafond_jour';
+        resultat := (false, solde_actuel, 'plafond_jour');
         return resultat;
       end if;
     end if;
   end if;
 
-  -- Débit
+  -- Consomme les lots les plus anciens, puis baisse le solde
+  perform public.consommer_lots(entreprise, montant);
+
   update public.soldes_credits
   set solde = solde - montant
   where entreprise_id = entreprise
@@ -184,29 +262,22 @@ begin
   values
     (entreprise, 'debit', -montant, nouveau_solde, motif, reference, cle);
 
-  -- Incrémente le compteur jour × canal × campagne (upsert)
   if campagne is not null and canal_debit is not null then
     insert into public.depenses_jour (entreprise_id, campagne_id, jour, canal, credits)
-    values (
-      entreprise,
-      campagne,
-      (now() at time zone coalesce(fuseau, 'UTC'))::date,
-      canal_debit,
-      montant
-    )
+    values (entreprise, campagne, jour_local, canal_debit, montant)
     on conflict (campagne_id, jour, canal)
     do update set credits = public.depenses_jour.credits + excluded.credits;
   end if;
 
-  resultat.ok := true;
-  resultat.solde := nouveau_solde;
-  resultat.raison := 'ok';
+  resultat := (true, nouveau_solde, 'ok');
   return resultat;
 end;
 $$;
 
 -- ═════════════════════════════════════════════════════════════════════════
 -- rembourser : recrédite exactement le montant d'un débit, une seule fois.
+-- Rouvre un lot sans expiration (le client ne doit pas être pénalisé par
+-- un échec d'envoi de notre côté).
 -- ═════════════════════════════════════════════════════════════════════════
 
 create or replace function public.rembourser(
@@ -223,6 +294,8 @@ declare
   cle_remboursement text;
   deja_rembourse public.transactions_credits%rowtype;
   nouveau_solde integer;
+  tx_id uuid;
+  montant_rendu integer;
 begin
   if cle_debit is null then
     raise exception 'cle_debit_obligatoire';
@@ -236,7 +309,6 @@ begin
     raise exception 'debit_introuvable: %', cle_debit;
   end if;
 
-  -- Clé du remboursement : préfixe pour éviter la collision avec le débit
   cle_remboursement := 'rembourse:' || cle_debit;
 
   select * into deja_rembourse
@@ -247,29 +319,32 @@ begin
     return deja_rembourse.solde_apres;
   end if;
 
+  montant_rendu := abs(tx_debit.montant);
+
   update public.soldes_credits
-  set solde = solde + abs(tx_debit.montant)
+  set solde = solde + montant_rendu
   where entreprise_id = tx_debit.entreprise_id
   returning solde into nouveau_solde;
 
   insert into public.transactions_credits
     (entreprise_id, type, montant, solde_apres, motif, reference, cle_idempotence)
   values
-    (tx_debit.entreprise_id, 'remboursement', abs(tx_debit.montant),
-     nouveau_solde, motif, cle_debit, cle_remboursement);
+    (tx_debit.entreprise_id, 'remboursement', montant_rendu,
+     nouveau_solde, motif, cle_debit, cle_remboursement)
+  returning id into tx_id;
+
+  insert into public.lots_credits
+    (entreprise_id, transaction_id, montant_initial, restant, expire_le)
+  values
+    (tx_debit.entreprise_id, tx_id, montant_rendu, montant_rendu, null);
 
   return nouveau_solde;
 end;
 $$;
 
 -- ═════════════════════════════════════════════════════════════════════════
--- expirer_credits : tâche de nuit. Retire les crédits non consommés dont
--- l'expiration est passée.
---
--- Algo : pour chaque entreprise, somme les (achat + bonus) expirés, puis la
--- somme des (debit + expiration + remboursement) depuis l'achat expiré.
--- La différence est le "pot" qui expire ; on crédite -différence (type
--- `expiration`) pour l'inscrire à l'historique sans jamais aller en négatif.
+-- expirer_credits : tâche de nuit. Ferme les lots échus et retire du solde
+-- exactement ce qui y restait. Rien d'autre n'est touché.
 -- ═════════════════════════════════════════════════════════════════════════
 
 create or replace function public.expirer_credits()
@@ -279,52 +354,29 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  n_expirees integer := 0;
+  n_entreprises integer := 0;
   r record;
-  pot_restant integer;
-  solde_actuel integer;
-  a_expirer integer;
   nouveau_solde integer;
   cle text;
 begin
   for r in
-    select entreprise_id,
-           sum(montant) filter (where type in ('achat', 'bonus') and expire_le is not null and expire_le <= now()) as credites_expires
-    from public.transactions_credits
+    select entreprise_id, sum(restant) as a_retirer
+    from public.lots_credits
+    where restant > 0
+      and expire_le is not null
+      and expire_le <= now()
     group by entreprise_id
-    having coalesce(sum(montant) filter (where type in ('achat', 'bonus') and expire_le is not null and expire_le <= now()), 0) > 0
   loop
-    -- Crédits déjà sortis depuis le début (débits + remboursements + expirations passées)
-    select coalesce(sum(case
-              when type = 'debit' then abs(montant)
-              when type = 'expiration' then abs(montant)
-              else 0
-            end), 0)
-      - coalesce(sum(case when type = 'remboursement' then montant else 0 end), 0)
-    into pot_restant
-    from public.transactions_credits
-    where entreprise_id = r.entreprise_id;
-
-    -- Ce qu'il reste à prélever sur les crédits expirés
-    a_expirer := r.credites_expires - pot_restant;
-    if a_expirer <= 0 then
-      continue;
-    end if;
-
-    -- On ne retire pas plus que le solde courant
-    select solde into solde_actuel
-    from public.soldes_credits
+    -- Ferme les lots échus de cette entreprise
+    update public.lots_credits
+    set restant = 0
     where entreprise_id = r.entreprise_id
-    for update;
-
-    if solde_actuel is null or solde_actuel = 0 then
-      continue;
-    end if;
-
-    a_expirer := least(a_expirer, solde_actuel);
+      and restant > 0
+      and expire_le is not null
+      and expire_le <= now();
 
     update public.soldes_credits
-    set solde = solde - a_expirer
+    set solde = greatest(0, solde - r.a_retirer)
     where entreprise_id = r.entreprise_id
     returning solde into nouveau_solde;
 
@@ -334,13 +386,14 @@ begin
     insert into public.transactions_credits
       (entreprise_id, type, montant, solde_apres, motif, cle_idempotence)
     values
-      (r.entreprise_id, 'expiration', -a_expirer, nouveau_solde,
-       'expiration automatique des crédits de plus de 12 mois', cle);
+      (r.entreprise_id, 'expiration', -r.a_retirer, nouveau_solde,
+       'expiration automatique des crédits de plus de 12 mois', cle)
+    on conflict (cle_idempotence) do nothing;
 
-    n_expirees := n_expirees + 1;
+    n_entreprises := n_entreprises + 1;
   end loop;
 
-  return n_expirees;
+  return n_entreprises;
 end;
 $$;
 
@@ -349,6 +402,7 @@ $$;
 -- ═════════════════════════════════════════════════════════════════════════
 
 revoke all on function public.crediter(uuid, integer, public.type_transaction, text, text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.consommer_lots(uuid, integer) from public, anon, authenticated;
 revoke all on function public.debiter(uuid, integer, text, text, text, uuid, public.canal) from public, anon, authenticated;
 revoke all on function public.rembourser(text, text) from public, anon, authenticated;
 revoke all on function public.expirer_credits() from public, anon, authenticated;

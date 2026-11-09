@@ -63,6 +63,8 @@ tests/                     tests Vitest
 8. **Erreurs** : ne jamais avaler une erreur. Retourner `{ ok: false, erreur: "message en français" }` aux Server Actions ; journaliser le détail technique côté serveur.
 9. **Réponses de l'IA** : toujours demander du JSON et le valider avec zod. Si la validation échoue, réessayer une fois, puis échouer proprement.
 10. **Noms** : tables et colonnes en français, en `snake_case` (`prospects`, `cree_le`). Fonctions et variables TypeScript en `camelCase`, anglais ou français mais cohérent dans un même fichier.
+    - **Attention aux mots réservés Postgres.** `analyse` en est un (variante britannique de `ANALYZE`) : la colonne s'appelle `analyse_ia`. Avant de nommer une colonne, vérifie la liste officielle des mots-clés Postgres. Dans le doute, ajoute un suffixe (`_ia`, `_texte`, `_date`).
+    - **Types TypeScript Supabase** : dans `database.types.ts`, écris `type`, jamais `interface`. Une `interface` ne satisfait pas `Record<string, unknown>`, et tout le typage Supabase s'effondre silencieusement (les `insert` deviennent `never`).
 11. **Petits fichiers** : une responsabilité par fichier, 300 lignes maximum.
 12. **Pas de nouvelle dépendance** sans la justifier dans ton rapport final.
 
